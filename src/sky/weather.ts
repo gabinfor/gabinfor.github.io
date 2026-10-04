@@ -77,8 +77,10 @@ export class WeatherFx {
       if (d.y >= floor) {
         if (d.layer < surfaces.length && this.splashes.length < 200 && Math.random() < 0.5)
           this.splashes.push({ x: d.x | 0, y: floor, life: 0.15, layer: d.layer });
+        // Respawn far enough upwind that slanted rain still reaches the downwind corner.
+        const drift = slant * (H + 30);
         d.y = -Math.random() * 30;
-        d.x = Math.random() * (W + 40) - 40 * Math.sign(slant);
+        d.x = Math.random() * (W + drift) - drift;
       }
     }
     this.splashes = this.splashes.filter((s) => (s.life -= dt) > 0);
@@ -160,15 +162,19 @@ export class WeatherFx {
   }
 
   drawLightning(g: CanvasRenderingContext2D) {
+    this.drawBolt(g);
+    if (this.flash > 0) {
+      g.fillStyle = `rgba(235,235,255,${this.flash * 0.45})`;
+      g.fillRect(0, 0, this.W, this.H);
+    }
+  }
+
+  drawBolt(g: CanvasRenderingContext2D) {
     if (this.boltLife > 0) {
       g.fillStyle = '#b9b4ff';
       if (this.boltLife > 0.12) for (const [x, y] of this.bolt) if ((x + y) & 1) { g.fillRect(x - 1, y, 1, 1); g.fillRect(x + 1, y, 1, 1); }
       g.fillStyle = '#fffbe8';
       for (const [x, y] of this.bolt) g.fillRect(x, y, 1, 1);
-    }
-    if (this.flash > 0) {
-      g.fillStyle = `rgba(235,235,255,${this.flash * 0.45})`;
-      g.fillRect(0, 0, this.W, this.H);
     }
   }
 }

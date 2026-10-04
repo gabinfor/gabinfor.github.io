@@ -82,6 +82,10 @@ function sparkle(x: number, y: number) {
 function syncSoundButton() {
   document.querySelectorAll<HTMLButtonElement>('[data-sound]').forEach((b) => b.setAttribute('aria-pressed', String(soundOn)));
 }
+const bloomIsOn = () => document.documentElement.dataset.bloom !== 'off';
+function syncBloomButton() {
+  document.querySelectorAll<HTMLButtonElement>('[data-bloom-toggle]').forEach((b) => b.setAttribute('aria-pressed', String(bloomIsOn())));
+}
 
 addEventListener('pointerdown', (e) => {
   const el = (e.target as Element).closest('a, button, summary, input, label');
@@ -107,7 +111,16 @@ addEventListener('click', (e) => {
     soundOn = !soundOn;
     store.set('sound', soundOn ? 'on' : 'off');
     syncSoundButton();
+syncBloomButton();
     blip(1200);
+  }
+  if (el.closest('[data-bloom-toggle]')) {
+    const on = !bloomIsOn();
+    if (on) delete document.documentElement.dataset.bloom; else document.documentElement.dataset.bloom = 'off';
+    store.set('bloom', on ? 'on' : 'off');
+    syncBloomButton();
+    dispatchEvent(new Event('sky:bloom'));
+    blip(on ? 1400 : 700);
   }
   const rnd = el.closest<HTMLElement>('[data-random]');
   if (rnd) {
@@ -117,3 +130,4 @@ addEventListener('click', (e) => {
 });
 
 syncSoundButton();
+syncBloomButton();

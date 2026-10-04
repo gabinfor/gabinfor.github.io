@@ -17,5 +17,6 @@ declare global {
     'sky:weather': CustomEvent<Weather | null>;
     'sky:fireworks': CustomEvent<number>;
     'sky:timelapse': Event;
+    'sky:bloom': Event;
   }
 }

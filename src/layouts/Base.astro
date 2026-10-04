@@ -41,9 +41,8 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
     <link rel="blogroll" type="text/xml" href="/blogroll.opml" />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="preload" href="/fonts/monocraft-regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/monocraft-bold.woff2" as="font" type="font/woff2" crossorigin />
     <!-- Sky math lives here so the colour scheme is right before first paint. -->
     <script is:inline>
       (function () {
@@ -62,6 +61,7 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
           var label = h < 5 ? 'late night' : h < 7.5 ? 'dawn' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 19.5 ? 'golden hour' : h < 21 ? 'dusk' : 'night';
           return { sunP: sunP, moonP: moonP, e: e, n: n, phase: phase, label: label };
         };
+        try { if (localStorage.getItem('bloom') === 'off') document.documentElement.dataset.bloom = 'off'; } catch (e) {}
         var h = window.__skyOverride !== null ? window.__skyOverride : window.__skyHour();
         document.documentElement.dataset.phase = window.__skyMath(h).phase;
       })();
@@ -109,6 +109,9 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
             <button type="button" class="btn" id="st-lapse"><Icon name="ffwd" />time-lapse</button>
             <button type="button" class="btn" data-sound aria-pressed="true">
               <span class="on"><Icon name="soundOn" /> sound on</span><span class="off"><Icon name="soundOff" /> sound off</span>
+            </button>
+            <button type="button" class="btn" data-bloom-toggle aria-pressed="true">
+              <span class="on"><Icon name="firework" /> bloom on</span><span class="off"><Icon name="firework" /> bloom off</span>
             </button>
           </div>
         </Window>

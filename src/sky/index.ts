@@ -10,8 +10,14 @@ import { blip, noise, toast } from '../scripts/clicky';
 import './eggs';
 
 const S = 4; // screen pixels per sky pixel
-const canvas = document.querySelector<HTMLCanvasElement>('.sky canvas')!;
+const canvas = document.querySelector<HTMLCanvasElement>('.sky canvas.base')!;
 const g = canvas.getContext('2d')!;
+// Bloom layer: light sources only, blurred by CSS and screen-blended on top. Toggled via html[data-bloom].
+const bloomCanvas = document.querySelector<HTMLCanvasElement>('.sky canvas.bloom')!;
+const bg = bloomCanvas.getContext('2d')!;
+const bloomOn = () => document.documentElement.dataset.bloom !== 'off';
+// What's glowing this frame (filled in while drawing the scene).
+let lights: { sun?: { x: number; y: number; r: number; c: RGB; vis: number }; moon?: { x: number; y: number; r: number; vis: number; lit: number }; stars: number } = { stars: 0 };
 let W = 1, H = 1;
 
 type Star = { x: number; y: number; b: number; tw: boolean; big: boolean; c: string };
@@ -85,8 +91,10 @@ function makeCloud(r: () => number, th: number, now: number): Cloud {
 function layout() {
   W = Math.max(1, Math.ceil(innerWidth / S));
   H = Math.max(1, Math.ceil(innerHeight / S));
-  canvas.width = W; canvas.height = H;
-  canvas.style.width = `${W * S}px`; canvas.style.height = `${H * S}px`;
+  for (const c of [canvas, bloomCanvas]) {
+    c.width = W; c.height = H;
+    c.style.width = `${W * S}px`; c.style.height = `${H * S}px`;
+  }
 
   const r = rng(7), starCols = ['#fffbe8', '#dfe8ff', '#ffe9c4'];
   stars = Array.from({ length: Math.round((W * H) / 200) }, () => ({
@@ -167,6 +175,7 @@ function drawSun(m: SkyMath, horizon: number, R: number, cover: number, bottom: 
   if (vis < 0.25) return;
   // Behind cloud the sun fades into the sky colour (solid, not dithered — dithering looks like noise).
   const c = mix(mix(hex('#fff2a8'), hex('#ff8a3d'), 1 - smooth(0, 0.35, m.e)), bottom, 1 - vis);
+  lights.sun = { x, y, r: R, c, vis };
   g.fillStyle = rgb(mix(c, bottom, 0.35)); glow(g, x, y, R, R + 6, 0.55 * vis);
   g.fillStyle = rgb(mix(c, hex('#ff8a3d'), 0.35 * vis)); disc(g, x, y, R);
   g.fillStyle = rgb(c); disc(g, x, y, R - 1);
@@ -196,6 +205,7 @@ function drawMoon(m: SkyMath, horizon: number, R: number, cover: number, top: RG
     const w = Math.sqrt(Math.max(0, r * r - dy * dy)) || 1, nx = dx / w;
     return p < 0.5 ? nx > k : nx < -k;
   };
+  lights.moon = { x, y, r, vis, lit: (1 - k) / 2 };
   g.fillStyle = rgb(lit); glow(g, x, y, r, r + 4, 0.22 * vis * (1 - Math.abs(k) * 0.5));
   const dark = rgb(mix(top, lit, 0.12)), litS = rgb(lit), craterS = rgb(crater);
   const craters = [[-0.35, -0.3], [0.25, 0.2], [-0.1, 0.45], [0.4, -0.35], [0.05, -0.05]].map(([a, b]) => [Math.round(a * r), Math.round(b * r)]);
@@ -292,15 +302,47 @@ function drawLand(m: SkyMath, bottom: RGB, gloom: number, t: number) {
     weather.drawPrecip(g, i + 1, m.n, bottom); // ...and on this hill, hidden by the nearer ones
   });
 
-  // fireflies on warm, dry nights
+  drawFireflies(g, m, t);
+}
+
+// fireflies on warm, dry nights
+function drawFireflies(ctx: CanvasRenderingContext2D, m: SkyMath, t: number) {
   const month = new Date().getMonth();
-  if (m.n > 0.6 && weather.p.rain < 0.1 && weather.p.snow < 0.1 && month >= 3 && month <= 9) {
-    g.fillStyle = '#d8ff6a';
-    for (const f of fireflies) {
-      if (Math.sin(t * 2 + f.ph * 3) < 0.3) continue;
-      g.fillRect(Math.round(f.ax + Math.sin(t * 0.7 + f.ph) * 4), Math.round(f.ay + Math.sin(t * 1.1 + f.ph * 2) * 2), 1, 1);
+  if (!(m.n > 0.6 && weather.p.rain < 0.1 && weather.p.snow < 0.1 && month >= 3 && month <= 9)) return;
+  ctx.fillStyle = '#d8ff6a';
+  for (const f of fireflies) {
+    if (Math.sin(t * 2 + f.ph * 3) < 0.3) continue;
+    ctx.fillRect(Math.round(f.ax + Math.sin(t * 0.7 + f.ph) * 4), Math.round(f.ay + Math.sin(t * 1.1 + f.ph * 2) * 2), 1, 1);
+  }
+}
+
+function drawMeteors(ctx: CanvasRenderingContext2D) {
+  for (const s of meteors) {
+    for (let i = 0; i < 7; i++) {
+      const x = Math.round(s.x - s.vx * i * 0.012), y = Math.round(s.y - s.vy * i * 0.012);
+      if (dither(x, y) < (1 - i / 7) * Math.min(1, s.life * 2)) { ctx.fillStyle = i ? '#cfd8ff' : '#ffffff'; ctx.fillRect(x, y, 1, 1); }
     }
   }
+}
+
+function drawBloom(m: SkyMath, t: number) {
+  bg.clearRect(0, 0, W, H);
+  const { sun: s, moon: mo } = lights;
+  if (s) { bg.fillStyle = rgb(s.c, 0.5 * s.vis); disc(bg, s.x, s.y, s.r); }
+  if (mo) { bg.fillStyle = `rgba(240,236,210,${0.35 * mo.vis * mo.lit})`; disc(bg, mo.x, mo.y, mo.r); }
+  if (lights.stars > 0.3) {
+    bg.fillStyle = `rgba(255,250,235,${lights.stars})`;
+    for (const st of stars) if (st.big) bg.fillRect(st.x, st.y, 1, 1);
+  }
+  fireworks.draw(bg);
+  drawMeteors(bg);
+  drawFireflies(bg, m, t);
+  if (m.n > 0.5) {
+    const { x, y, w, h } = HOUSE_WINDOW;
+    bg.fillStyle = '#ffd45a';
+    bg.fillRect(house.x + x, house.y + y, w, h);
+  }
+  weather.drawBolt(bg);
 }
 
 function drawCritters(top: RGB, t: number) {
@@ -311,12 +353,7 @@ function drawCritters(top: RGB, t: number) {
     g.fillRect(x - 1, y - up, 1, 1); g.fillRect(x + 1, y - up, 1, 1);
     if (!up) { g.fillRect(x - 2, y + 1, 1, 1); g.fillRect(x + 2, y + 1, 1, 1); }
   }
-  for (const s of meteors) {
-    for (let i = 0; i < 7; i++) {
-      const x = Math.round(s.x - s.vx * i * 0.012), y = Math.round(s.y - s.vy * i * 0.012);
-      if (dither(x, y) < (1 - i / 7) * Math.min(1, s.life * 2)) { g.fillStyle = i ? '#cfd8ff' : '#ffffff'; g.fillRect(x, y, 1, 1); }
-    }
-  }
+  drawMeteors(g);
 }
 
 type SkyMath = ReturnType<Window['__skyMath']>;
@@ -327,9 +364,11 @@ function draw(h: number, t: number) {
   top = mix(top, mix([120, 126, 140], [24, 26, 40], m.n), wx.gloom * 0.75);
   bottom = mix(bottom, mix([170, 174, 184], [40, 42, 58], m.n), wx.gloom * 0.7);
   drawGradient(top, bottom);
+  lights = { stars: 0 };
   const horizon = Math.round(H * 0.74), R = Math.max(4, Math.round(Math.min(W, H) * 0.05));
 
   const sa = smooth(0.55, 0.95, m.n) * (1 - wx.cover * 0.9);
+  lights.stars = sa;
   if (sa > 0.02) for (const s of stars) {
     const a = sa * s.b * (s.tw ? 0.45 + 0.55 * Math.sin(t * 3 + s.x * 1.7) : 1);
     if (dither(s.x, s.y) >= a * 1.2) continue;
@@ -351,6 +390,7 @@ function draw(h: number, t: number) {
   weather.drawPrecip(g, 4, m.n, bottom); // foreground: in front of everything
   weather.drawFog(g, m.n, bottom);
   weather.drawLightning(g);
+  if (bloomOn()) drawBloom(m, t);
 }
 
 // ---------- simulation ----------
@@ -452,6 +492,7 @@ addEventListener('sky:weather', (e) => {
   wake();
 });
 addEventListener('sky:fireworks', (e) => { fireworks.show(e.detail); wake(); });
+addEventListener('sky:bloom', wake);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) lastSim = performance.now(); });
 
 // Clicking the empty sky: fireworks at night, startled birds by day, and the sun has a secret.
