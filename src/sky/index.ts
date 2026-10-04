@@ -584,8 +584,8 @@ function update(dt: number, t: number, m: SkyMath) {
   for (const p of smoke) { p.age += dt; p.y -= 4 * dt; p.x += (wind * 1.2 + Math.sin(p.age * 2) * 0.8) * dt; }
   smoke = smoke.filter((p) => p.age < 5);
 
-  // shooting stars on clear nights (about every 9 s; every couple of seconds during a shower)
-  if (m.n > 0.6 && weather.p.cover < 0.6 && Math.random() < dt / (inShower() ? 2 : 9)) spawnMeteor();
+  // shooting stars on clear nights: rare and random (about one a minute; every few seconds during a shower)
+  if (m.n > 0.6 && weather.p.cover < 0.6 && Math.random() < dt / (inShower() ? 4 : 60)) spawnMeteor();
   planes.update(dt, weather.p.rain < 0.1 && weather.p.cover < 0.8, m.n < 0.4, t);
   for (const s of meteors) {
     s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;

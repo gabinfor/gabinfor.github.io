@@ -171,14 +171,26 @@ export const ZOMBIE = [
 ];
 export const ZOMBIE_PAL = { h: '#4f8f3c', k: '#13230f', S: '#2fa3a3', P: '#3b3f9e' };
 
+// Skeleton: big skull with square eye sockets and teeth, ribcage on a spine, thin limbs,
+// one arm held out gripping a bow (string drawn faint).
 export const SKELETON = [
-  '.wwww.',
-  '.kwkw.',
-  '.wwww.',
-  '..w..b',
-  '.wwwwb',
-  '..w..b',
-  '.w.w..',
-  '.w.w..',
+  '.WWWWWWWw..',
+  '.WkkWWkkw..',
+  '.WkkWWkkw..',
+  '.WWWkkWWw..',
+  '.wkWkWkWw..',
+  '.swwwwwws..',
+  '..wWWWWw.b.',
+  '..W.Ws.W.tb',
+  '..WWWWWW.tb',
+  '..W.Ws.WWWb',
+  '..WWWWW..tb',
+  '..s.Ws...tb',
+  '...wWWw..tb',
+  '...W..W..b.',
+  '...W..W....',
+  '...w..w....',
+  '...W..W....',
+  '...s..s....',
 ];
-export const SKELETON_PAL = { w: '#d4d4d4', k: '#2a2a2a', b: '#8a5a2b' };
+export const SKELETON_PAL = { W: '#e6e6e6', w: '#b4b4b4', s: '#7c7c7c', k: '#1e1e1e', b: '#7a4a1e', t: '#9a9a9a' };
