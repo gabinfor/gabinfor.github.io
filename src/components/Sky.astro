@@ -1,0 +1,242 @@
+---
+// Full-page pixel-art sky synced to the visitor's local time.
+// Drawn at 1/4 resolution and scaled up with crisp pixels.
+// Preview any hour with ?hour=21.5, or dispatch `sky:set` / `sky:timelapse` on window.
+---
+<div class="sky" aria-hidden="true"><canvas></canvas></div>
+
+<style>
+  .sky { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+  canvas { image-rendering: pixelated; max-width: none; }
+</style>
+
+<script>
+  type RGB = [number, number, number];
+  const S = 4; // screen pixels per sky pixel
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+  const hex = (s: string): RGB => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)) as RGB;
+  const mix = (a: RGB, b: RGB, t: number): RGB => [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * t)) as RGB;
+  const rgb = (c: RGB, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  function rng(seed: number) {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // [hour, zenith colour, horizon colour]
+  const KEYS: [number, RGB, RGB][] = ([
+    [0, '#070a24', '#1a1f4e'],
+    [4.5, '#0c1238', '#2a2a5e'],
+    [6, '#2d3c84', '#e88a6a'],
+    [7.5, '#4a8fe0', '#ffd6a0'],
+    [10, '#2f7fe6', '#a9dcff'],
+    [16, '#3584e4', '#c7e9ff'],
+    [18, '#3b6bc4', '#ffc58a'],
+    [19.5, '#3a2f7a', '#ff6f4a'],
+    [20.75, '#16184a', '#5a3466'],
+    [22, '#070a24', '#1a1f4e'],
+    [24, '#070a24', '#1a1f4e'],
+  ] as [number, string, string][]).map(([h, a, b]) => [h, hex(a), hex(b)]);
+
+  function skyAt(h: number) {
+    let i = 0;
+    while (KEYS[i + 1][0] <= h) i++;
+    const [h0, t0, b0] = KEYS[i], [h1, t1, b1] = KEYS[i + 1];
+    const t = (h - h0) / (h1 - h0);
+    return { top: mix(t0, t1, t), bottom: mix(b0, b1, t) };
+  }
+
+  const HILLS = [
+    { base: 0.7, amp: 0.06, f1: 0.018, f2: 0.047, ph: 1.3, color: hex('#7fb07a'), haze: 0.55 },
+    { base: 0.79, amp: 0.05, f1: 0.025, f2: 0.061, ph: 4.1, color: hex('#4f9150'), haze: 0.25 },
+    { base: 0.88, amp: 0.04, f1: 0.031, f2: 0.083, ph: 2.2, color: hex('#3a7a3c'), haze: 0 },
+  ];
+  const NIGHT: RGB = [12, 16, 38];
+
+  type Cloud = { x0: number; y: number; speed: number; w: number; rects: [number, number, number, number, number][] };
+
+  const canvas = document.querySelector<HTMLCanvasElement>('.sky canvas')!;
+  const ctx = canvas.getContext('2d')!;
+  let W = 0, H = 0;
+  let stars: { x: number; y: number; b: number; tw: boolean }[] = [];
+  let clouds: Cloud[] = [];
+  let grad: ImageData | null = null, gradKey = '';
+
+  function makeCloud(r: () => number): Cloud {
+    const w = 14 + Math.floor(r() * 22);
+    const rects: Cloud['rects'] = [[0, 0, w, 3, 0], [1, 3, w - 2, 1, 1]];
+    const puffs = 2 + Math.floor(r() * 3);
+    for (let i = 0; i < puffs; i++) {
+      const rad = 2 + Math.floor(r() * 4);
+      const cx = Math.floor(rad + r() * (w - 2 * rad));
+      for (let dy = -rad; dy <= 0; dy++) {
+        const half = Math.round(Math.sqrt(rad * rad - dy * dy));
+        rects.push([cx - half, dy, half * 2 + 1, 1, 0]);
+      }
+    }
+    return { x0: r(), y: 0.08 + r() * 0.35, speed: 0.4 + r() * 1.1, w, rects };
+  }
+
+  function layout() {
+    W = Math.max(1, Math.ceil(innerWidth / S));
+    H = Math.max(1, Math.ceil(innerHeight / S));
+    canvas.width = W; canvas.height = H;
+    canvas.style.width = `${W * S}px`; canvas.style.height = `${H * S}px`;
+    const r = rng(7);
+    stars = Array.from({ length: Math.round((W * H) / 220) }, () => ({
+      x: Math.floor(r() * W), y: Math.floor(r() * H * 0.7), b: 0.4 + r() * 0.6, tw: r() < 0.15,
+    }));
+    const rc = rng(99);
+    clouds = Array.from({ length: Math.max(3, Math.round(W / 70)) }, () => makeCloud(rc));
+    gradKey = '';
+  }
+
+  function drawGradient(top: RGB, bottom: RGB) {
+    const key = `${top}|${bottom}|${W}x${H}`;
+    if (key !== gradKey || !grad) {
+      const N = 12;
+      const cols = Array.from({ length: N }, (_, i) => mix(top, bottom, i / (N - 1)));
+      const img = ctx.createImageData(W, H), d = img.data, span = H * 0.8;
+      for (let y = 0; y < H; y++) {
+        const v = Math.min(1, y / span) * (N - 1), b0 = Math.floor(v), f = v - b0, b1 = Math.min(N - 1, b0 + 1);
+        for (let x = 0; x < W; x++) {
+          const c = f > (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16 ? cols[b1] : cols[b0];
+          const i = (y * W + x) * 4;
+          d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+        }
+      }
+      grad = img; gradKey = key;
+    }
+    ctx.putImageData(grad, 0, 0);
+  }
+
+  function disc(cx: number, cy: number, r: number) {
+    for (let dy = -r; dy <= r; dy++) {
+      const half = Math.round(Math.sqrt(r * r - dy * dy));
+      ctx.fillRect(cx - half, cy + dy, half * 2 + 1, 1);
+    }
+  }
+
+  const hillY = (L: (typeof HILLS)[number], x: number) =>
+    Math.round(H * (L.base - (L.amp * (Math.sin(x * L.f1 + L.ph) + 0.5 * Math.sin(x * L.f2 + L.ph * 2))) / 1.5));
+
+  function draw(h: number, t: number) {
+    const m = window.__skyMath(h);
+    const { top, bottom } = skyAt(h);
+    drawGradient(top, bottom);
+    const horizon = Math.round(H * 0.74);
+
+    // stars
+    const sa = smooth(0.55, 0.95, m.n);
+    if (sa > 0) for (const s of stars) {
+      const a = sa * s.b * (s.tw ? 0.5 + 0.5 * Math.sin(t * 3 + s.x) : 1);
+      ctx.fillStyle = `rgba(255,250,230,${a})`;
+      ctx.fillRect(s.x, s.y, 1, 1);
+    }
+
+    // sun or moon
+    const R = Math.max(3, Math.round(Math.min(W, H) * 0.045));
+    if (m.sunP >= 0 && m.sunP <= 1) {
+      const x = Math.round(W * (0.08 + 0.84 * m.sunP)), y = Math.round(horizon - m.e * H * 0.55);
+      const c = mix(hex('#fff2a8'), hex('#ff8a3d'), 1 - smooth(0, 0.35, m.e));
+      ctx.fillStyle = rgb(c, 0.25); disc(x, y, R + 3);
+      ctx.fillStyle = rgb(c); disc(x, y, R);
+    } else {
+      const x = Math.round(W * (0.08 + 0.84 * m.moonP)), y = Math.round(horizon + m.e * H * 0.55);
+      ctx.fillStyle = 'rgba(243,239,214,0.15)'; disc(x, y, R + 2);
+      ctx.fillStyle = '#f3efd6'; disc(x, y, R - 1);
+      ctx.fillStyle = '#d4cfb2';
+      ctx.fillRect(x - 1, y - 1, 2, 2); ctx.fillRect(x + 1, y + 1, 1, 1); ctx.fillRect(x - 2, y + 1, 1, 1);
+    }
+
+    // clouds (positions come from the wall clock so they don't jump between pages)
+    const light = mix(mix([255, 255, 255], bottom, 0.3), [58, 62, 108], m.n * 0.85);
+    const lightS = rgb(light), shadeS = rgb(mix(light, top, 0.35));
+    for (const c of clouds) {
+      const span = W + c.w * 2;
+      const x = Math.floor(((c.x0 * span + t * c.speed) % span) - c.w), y = Math.round(c.y * H);
+      for (const [rx, ry, rw, rh, sh] of c.rects) {
+        ctx.fillStyle = sh ? shadeS : lightS;
+        ctx.fillRect(x + rx, y + ry, rw, rh);
+      }
+    }
+
+    // hills
+    for (const L of HILLS) {
+      const col = mix(mix(L.color, bottom, L.haze), NIGHT, m.n * 0.8);
+      const edge = rgb(mix(col, [255, 255, 255], 0.14));
+      ctx.fillStyle = rgb(col);
+      for (let x = 0; x < W; x++) ctx.fillRect(x, hillY(L, x), 1, H);
+      ctx.fillStyle = edge;
+      for (let x = 0; x < W; x++) ctx.fillRect(x, hillY(L, x), 1, 1);
+    }
+
+    // a tree and a little house on the front hill
+    const front = HILLS[2], dim = (c: string) => rgb(mix(hex(c), NIGHT, m.n * 0.7));
+    const tx = Math.round(W * 0.68), ty = hillY(front, tx);
+    ctx.fillStyle = dim('#6b4a2b'); ctx.fillRect(tx, ty - 4, 1, 4);
+    ctx.fillStyle = dim('#2f6b34'); disc(tx, ty - 7, 3);
+    const hx = Math.round(W * 0.8), hy = hillY(front, hx + 4);
+    ctx.fillStyle = dim('#e8dcc0'); ctx.fillRect(hx, hy - 6, 9, 7);
+    ctx.fillStyle = dim('#b5442e');
+    for (let i = 0; i < 4; i++) ctx.fillRect(hx - 1 + i, hy - 7 - i, 11 - i * 2, 1);
+    ctx.fillRect(hx + 7, hy - 11, 1, 3); // chimney
+    ctx.fillStyle = dim('#5b3a22'); ctx.fillRect(hx + 2, hy - 3, 2, 4); // door
+    ctx.fillStyle = m.n > 0.5 ? '#ffd45a' : '#5a7fb0'; ctx.fillRect(hx + 5, hy - 4, 2, 2); // window
+  }
+
+  // ---- time & loop ----
+  let manual: number | null = window.__skyOverride;
+  let lapse: { start: number; from: number } | null = null;
+  let lastMinute = -1, last = 0;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function hourNow(now: number) {
+    if (lapse) {
+      const k = (now - lapse.start) / 1000; // 1 sky-hour per second
+      if (k < 24) return (lapse.from + k) % 24;
+      lapse = null;
+    }
+    return manual ?? window.__skyHour();
+  }
+
+  function tick(now: number) {
+    if (now - last >= 83 || last === 0) { // ~12 fps for that low-fi feel
+      last = now;
+      const h = hourNow(now);
+      draw(h, Date.now() / 1000);
+      const minute = Math.floor(h * 60);
+      if (minute !== lastMinute) {
+        lastMinute = minute;
+        const m = window.__skyMath(h);
+        document.documentElement.dataset.phase = m.phase;
+        dispatchEvent(new CustomEvent('skychange', { detail: { ...m, h } }));
+      }
+    }
+    schedule();
+  }
+
+  // Exactly one pending frame at a time; with reduced motion, redraw twice a minute.
+  let raf = 0, timer = 0;
+  function schedule(immediate = false) {
+    cancelAnimationFrame(raf); clearTimeout(timer);
+    if (still && !lapse && !immediate) timer = window.setTimeout(() => (raf = requestAnimationFrame(tick)), 30_000);
+    else raf = requestAnimationFrame(tick);
+  }
+
+  addEventListener('resize', () => { layout(); last = 0; schedule(true); });
+  addEventListener('sky:set', (e) => { manual = e.detail; lapse = null; last = 0; schedule(true); });
+  addEventListener('sky:timelapse', () => {
+    lapse = { start: performance.now(), from: hourNow(performance.now()) };
+    last = 0;
+    schedule(true);
+  });
+
+  layout();
+  schedule(true);
+</script>

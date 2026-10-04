@@ -22,6 +22,8 @@
     "esbuild": true
   },
   "devDependencies": {
-    "@webgpu/types": "^0.1.74"
+    "@astrojs/check": "^0.9.10",
+    "@webgpu/types": "^0.1.74",
+    "typescript": "^6.0.3"
   }
 }

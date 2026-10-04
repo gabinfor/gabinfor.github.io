@@ -1,17 +1,25 @@
 ---
 import '../styles/global.css';
-import ThemeToggle from '../components/ThemeToggle.astro';
+import { getCollection } from 'astro:content';
+import Sky from '../components/Sky.astro';
+import Window from '../components/Window.astro';
+import Badge88 from '../components/Badge88.astro';
 import { SITE } from '../data/site';
+import { BLOGROLL } from '../data/blogroll';
 
 interface Props { title?: string; description?: string }
 const { title, description = SITE.tagline } = Astro.props;
-const fullTitle = title ? `${title} — ${SITE.title}` : SITE.title;
+const fullTitle = title ? `${title} :: ${SITE.title}` : `${SITE.title}'s homepage`;
 const path = Astro.url.pathname;
 const nav = [
-  { href: '/blog/', label: 'Writing' },
-  { href: '/lab/', label: 'Lab' },
-  { href: '/blogroll/', label: 'Blogroll' },
+  { href: '/', label: 'home', icon: '⌂' },
+  { href: '/blog/', label: 'writing', icon: '✎' },
+  { href: '/lab/', label: 'lab', icon: '⚗' },
+  { href: '/blogroll/', label: 'blogroll', icon: '☺' },
+  { href: '/rss.xml', label: 'rss', icon: '◉' },
 ];
+const isCurrent = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) => +b.data.date - +a.data.date)[0];
 ---
 <!doctype html>
 <html lang="en">
@@ -28,36 +36,161 @@ const nav = [
     <meta property="og:description" content={description} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <!-- Sky math lives here so the colour scheme is right before first paint. -->
     <script is:inline>
-      try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+      (function () {
+        var q = new URLSearchParams(location.search).get('hour');
+        window.__skyOverride = q !== null && q !== '' && !isNaN(+q) ? ((+q % 24) + 24) % 24 : null;
+        window.__skyHour = function () {
+          var d = new Date();
+          return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+        };
+        window.__skyMath = function (h) {
+          var sunP = (h - 6) / 13.5, moonP = ((h - 19.5 + 24) % 24) / 10.5;
+          var e = sunP >= 0 && sunP <= 1 ? Math.sin(Math.PI * sunP) : -Math.sin(Math.PI * Math.min(moonP, 1));
+          var s = Math.min(1, Math.max(0, (e + 0.15) / 0.4)); s = s * s * (3 - 2 * s);
+          var n = 1 - s;
+          var phase = n > 0.6 ? 'night' : e < 0.35 ? (h < 12 ? 'dawn' : 'dusk') : 'day';
+          var label = h < 5 ? 'late night' : h < 7.5 ? 'dawn' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 19.5 ? 'golden hour' : h < 21 ? 'dusk' : 'night';
+          return { sunP: sunP, moonP: moonP, e: e, n: n, phase: phase, label: label };
+        };
+        var h = window.__skyOverride !== null ? window.__skyOverride : window.__skyHour();
+        document.documentElement.dataset.phase = window.__skyMath(h).phase;
+      })();
     </script>
   </head>
   <body>
-    <header class="wrap top">
-      <a class="logo" href="/">{SITE.title}<span class="accent">.</span></a>
-      <nav class="mono">
-        {nav.map((n) => (
-          <a href={n.href} aria-current={path.startsWith(n.href) ? 'page' : undefined}>{n.label}</a>
-        ))}
-        <ThemeToggle />
-      </nav>
-    </header>
-    <main class="wrap"><slot /></main>
-    <footer class="wrap foot mono">
-      <span>© {new Date().getFullYear()} {SITE.author}</span>
-      <span>
-        <a href="/rss.xml">RSS</a> · <a href="/blogroll.opml">OPML</a> · <a href={SITE.github}>GitHub</a>
-      </span>
-    </footer>
+    <Sky />
+    <div class="page">
+      <header class="banner">
+        <a class="site-title" href="/">{SITE.title}'s homepage</a>
+        <p class="sub">{SITE.tagline}</p>
+      </header>
+
+      <div class="marquee window" aria-label="News ticker">
+        <span>
+          ★ welcome, traveller! ★ the sky up there matches the time where you are ★
+          {latest && <>newest post: <a href={`/blog/${latest.id}/`}>{latest.data.title}</a> ★ </>}
+          click things, they make noises ★ sign my blogroll ★
+        </span>
+      </div>
+
+      <div class="layout">
+        <Window title="navigation" icon="▤" class="nav">
+          <nav class="nav-btns">
+            {nav.map((n) => (
+              <a class="btn" href={n.href} aria-current={isCurrent(n.href) ? 'page' : undefined}>
+                <span aria-hidden="true">{n.icon}</span>{n.label}
+              </a>
+            ))}
+          </nav>
+        </Window>
+
+        <Window title={`${new URL(Astro.site!).host}${path}`} icon="📄" class="main" tag="main">
+          <slot />
+        </Window>
+
+        <Window title="status" icon="☼" class="status">
+          <dl class="stat">
+            <dt>your time</dt><dd id="st-time">--:--</dd>
+            <dt>sky</dt><dd id="st-sky">…</dd>
+            <dt>visits</dt><dd id="st-visits">1st</dd>
+          </dl>
+          <div class="stat-btns">
+            <button type="button" class="btn" id="st-lapse">⏩ time-lapse</button>
+            <button type="button" class="btn" data-sound aria-pressed="true">🔊 sound on</button>
+          </div>
+        </Window>
+      </div>
+
+      <footer class="foot">
+        <div class="badges">
+          <a class="b88-own" href="/" title={`${SITE.title}'s homepage`}><img src="/button.svg" width="88" height="31" alt={`${SITE.title}`} /></a>
+          {BLOGROLL.map((b) => <Badge88 name={b.name} href={b.url} img={b.button} />)}
+        </div>
+        <div class="foot-row window">
+          <span>© {new Date().getFullYear()} {SITE.author} · hand-made, no trackers</span>
+          <span class="foot-links">
+            <button type="button" class="btn" data-random={JSON.stringify(BLOGROLL.map((b) => b.url))}>🎲 random cool site</button>
+            <a href="/blogroll.opml">opml</a>
+            <a href={SITE.github}>github</a>
+          </span>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      import '../scripts/clicky';
+
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const timeEl = document.getElementById('st-time')!, skyEl = document.getElementById('st-sky')!;
+      const show = (h: number) => {
+        const mins = Math.floor(h * 60);
+        timeEl.textContent = `${pad(Math.floor(mins / 60) % 24)}:${pad(mins % 60)}`;
+        skyEl.textContent = window.__skyMath(h).label;
+      };
+      addEventListener('skychange', (e) => show(e.detail.h));
+      show(window.__skyOverride ?? window.__skyHour()); // don't wait for the first frame
+      document.getElementById('st-lapse')!.addEventListener('click', () => dispatchEvent(new Event('sky:timelapse')));
+
+      // A personal visit counter, kept only in this browser.
+      try {
+        let v = Number(localStorage.getItem('visits') || 0);
+        if (!sessionStorage.getItem('counted')) { v++; localStorage.setItem('visits', String(v)); sessionStorage.setItem('counted', '1'); }
+        const s = ['th', 'st', 'nd', 'rd'], r = v % 100;
+        document.getElementById('st-visits')!.textContent = `${v}${s[(r - 20) % 10] || s[r] || s[0]}`;
+      } catch {}
+    </script>
   </body>
 </html>
+
 <style>
-  .top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.25rem 0; border-bottom: 1px solid var(--ink); flex-wrap: wrap; }
-  .logo { font-family: var(--display); font-size: 1.9rem; text-decoration: none; line-height: 1; }
-  nav { display: flex; align-items: center; gap: 1.25rem; font-size: 0.8rem; text-transform: uppercase; }
-  nav a { text-decoration: none; }
-  nav a[aria-current] { color: var(--accent); }
-  main { min-height: 70vh; padding-bottom: 4rem; }
-  .foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 1.5rem 0 2.5rem; border-top: 1px solid var(--ink); color: var(--ink-2); }
+  .page { width: min(100% - 24px, 960px); margin: 0 auto; padding: 28px 0 40px; }
+
+  .banner { text-align: center; margin-bottom: 18px; }
+  .site-title {
+    font: 700 clamp(30px, 7vw, 54px)/1 var(--pixel); color: #fff; text-decoration: none;
+    text-shadow: 3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  }
+  .site-title:hover { color: #ffe066; }
+  .sub { margin: 10px 0 0; color: #fff; font: 600 15px var(--pixel); text-shadow: 2px 2px 0 #000; }
+
+  .marquee { overflow: hidden; white-space: nowrap; margin-bottom: 16px; padding: 5px 0; font: 600 13px var(--pixel); }
+  .marquee span { display: inline-block; padding-left: 100%; animation: marquee 32s linear infinite; }
+  .marquee:hover span { animation-play-state: paused; }
+  @keyframes marquee { to { transform: translateX(-100%); } }
+  @media (prefers-reduced-motion: reduce) { .marquee span { padding-left: 12px; white-space: normal; } }
+
+  .layout {
+    display: grid; gap: 16px; align-items: start;
+    grid-template-columns: 190px minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: 'nav main' 'status main' '. main';
+  }
+  .layout > :global(.nav) { grid-area: nav; }
+  .layout > :global(.main) { grid-area: main; min-height: 60vh; }
+  .layout > :global(.status) { grid-area: status; }
+  .nav-btns { display: flex; flex-direction: column; gap: 6px; }
+  .nav-btns .btn { justify-content: flex-start; }
+
+  .stat { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0 0 12px; font-size: 12px; }
+  .stat dt { color: var(--win-muted); }
+  .stat dd { margin: 0; font: 600 13px var(--pixel); }
+  .stat-btns { display: flex; flex-direction: column; gap: 6px; }
+  .stat-btns .btn { font-size: 12px; padding: 6px 8px; }
+
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'nav' 'main' 'status'; }
+    .nav-btns { flex-direction: row; flex-wrap: wrap; }
+    .stat-btns { flex-direction: row; flex-wrap: wrap; }
+  }
+
+  .foot { margin-top: 24px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 14px; }
+  .b88-own img { image-rendering: pixelated; }
+  .b88-own:active { transform: translate(1px, 1px); }
+  .foot-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 12px; font-size: 12px; }
+  .foot-links { display: flex; align-items: center; gap: 12px; }
+  .foot-links .btn { font-size: 12px; padding: 5px 8px; }
 </style>

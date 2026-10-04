@@ -6,8 +6,8 @@ import PostList from '../../components/PostList.astro';
 const posts = (await getCollection('blog', (p) => !p.data.draft))
   .sort((a, b) => +b.data.date - +a.data.date);
 ---
-<Base title="Writing" description="Everything I've written.">
+<Base title="writing" description="Everything I've written.">
   <h1>Writing</h1>
-  <p class="meta">{posts.length} posts · <a href="/rss.xml">subscribe via RSS</a></p>
+  <p class="muted">{posts.length} posts so far · <a href="/rss.xml">subscribe via RSS</a></p>
   <PostList posts={posts} />
 </Base>

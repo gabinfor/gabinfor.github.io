@@ -12,19 +12,17 @@ const { Content } = await render(post);
 ---
 <Base title={post.data.title} description={post.data.description}>
   <article>
-    <header class="post-head">
-      <p class="meta">{fmtDate(post.data.date)}</p>
-      <h1>{post.data.title}</h1>
-      <p class="lede">{post.data.description}</p>
-      <div class="tags">{post.data.tags.map((t) => <span class="tag">{t}</span>)}</div>
-    </header>
+    <p class="date">posted {fmtDate(post.data.date)}</p>
+    <h1>{post.data.title}</h1>
+    <p class="lede muted">{post.data.description}</p>
+    <div class="tags">{post.data.tags.map((t) => <span class="tag">{t}</span>)}</div>
+    <hr />
     <div class="prose"><Content /></div>
   </article>
   <hr />
-  <p class="mono"><a href="/blog/">← All posts</a></p>
+  <a class="btn" href="/blog/">« back to all posts</a>
 </Base>
 <style>
-  .post-head { padding: 3rem 0 2rem; border-bottom: 1px solid var(--rule); margin-bottom: 2rem; }
-  .lede { font-size: 1.3rem; color: var(--ink-2); max-width: 50ch; font-style: italic; }
-  .tags { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .lede { font-size: 15px; font-style: italic; margin-top: 0; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
 </style>

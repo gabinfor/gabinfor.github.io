@@ -1,18 +1,23 @@
 ---
 import type { CollectionEntry } from 'astro:content';
-import { fmtDate } from '../lib/format';
+import { isoDate, isNew } from '../lib/format';
 interface Props { posts: CollectionEntry<'blog'>[] }
 const { posts } = Astro.props;
 ---
-<ul class="ledger">
+<ul class="posts">
   {posts.map((p) => (
     <li>
-      <a href={`/blog/${p.id}/`}>
-        <span class="meta">{fmtDate(p.data.date)}</span>
-        <span class="t">{p.data.title}</span>
-        <span class="arrow mono">→</span>
-        <span class="d">{p.data.description}</span>
-      </a>
+      <span class="date">[{isoDate(p.data.date)}]</span>
+      <a href={`/blog/${p.id}/`}>{p.data.title}</a>
+      {isNew(p.data.date) && <span class="new">NEW!</span>}
+      <div class="desc muted">{p.data.description}</div>
     </li>
   ))}
 </ul>
+<style>
+  .posts { list-style: none; padding: 0; margin: 0; }
+  li { padding: 9px 0; border-bottom: 1px dashed var(--win-muted); }
+  li:last-child { border-bottom: 0; }
+  a { font-weight: 700; margin-left: 4px; }
+  .desc { font-size: 12px; margin-top: 2px; }
+</style>

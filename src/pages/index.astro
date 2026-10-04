@@ -1,7 +1,6 @@
 ---
 import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
-import GpuBlobs from '../components/GpuBlobs.astro';
 import PostList from '../components/PostList.astro';
 import FriendsFeed from '../components/FriendsFeed.astro';
 import { SITE } from '../data/site';
@@ -10,25 +9,17 @@ const posts = (await getCollection('blog', (p) => !p.data.draft))
   .sort((a, b) => +b.data.date - +a.data.date).slice(0, 5);
 ---
 <Base>
-  <section class="hero">
-    <div class="copy">
-      <p class="meta">Personal site · est. 2026</p>
-      <h1>Hi, I'm {SITE.author}. I make <em class="accent">small worlds</em> on the web.</h1>
-      <p class="lede">Notes on code, graphics, and whatever I'm tinkering with. Move your cursor over the blobs, they're rendered live with WebGPU.</p>
-    </div>
-    <GpuBlobs height="min(60vh, 480px)" />
-  </section>
+  <h1>Welcome to my homepage!</h1>
+  <div class="prose">
+    <p>Hi, I'm <b>{SITE.author}</b>. This is my little corner of the web, where I write about the things I build and the things I'm learning.</p>
+    <p>Look up: the sky behind this page follows the clock wherever <i>you</i> are. Come back tonight and the stars will be out. Hit <b>⏩ time-lapse</b> in the status box to watch a whole day go by.</p>
+  </div>
 
-  <h2 class="section-label meta">Latest writing</h2>
+  <h2>✎ latest writing</h2>
   <PostList posts={posts} />
-  <p class="mono"><a href="/blog/">All posts →</a></p>
+  <p><a href="/blog/">» all posts</a></p>
 
-  <h2 class="section-label meta">From blogs I read</h2>
+  <h2>☺ from blogs I read</h2>
   <FriendsFeed limit={6} />
-  <p class="mono"><a href="/blogroll/">The whole blogroll →</a></p>
+  <p><a href="/blogroll/">» the whole blogroll</a></p>
 </Base>
-<style>
-  .hero { display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: 2rem; padding-top: 2rem; }
-  .lede { font-size: 1.25rem; color: var(--ink-2); max-width: 36ch; }
-  @media (max-width: 820px) { .hero { grid-template-columns: 1fr; } }
-</style>

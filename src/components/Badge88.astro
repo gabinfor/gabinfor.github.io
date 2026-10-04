@@ -1,0 +1,33 @@
+---
+// A classic 88x31 link button. Uses `img` if given, otherwise draws one in CSS.
+interface Props { name: string; href: string; img?: string }
+const { name, href, img } = Astro.props;
+// FNV-1a hash of the name -> a stable hue per blog
+let hash = 2166136261;
+for (const ch of name) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+---
+<a class="b88" href={href} rel="noopener" title={name} style={`--h:${(hash * 137) % 360}`}>
+  {img ? <img src={img} width="88" height="31" alt={name} loading="lazy" /> : (
+    <><span class="ico">{name[0]}</span><span class="txt">{name}</span></>
+  )}
+</a>
+<style>
+  .b88 {
+    width: 88px; height: 31px; display: inline-flex; align-items: center; gap: 4px; padding: 3px;
+    border: 1px solid #000; text-decoration: none; overflow: hidden; flex: none;
+    background: linear-gradient(hsl(var(--h) 70% 52%), hsl(var(--h) 75% 30%));
+    box-shadow: inset 1px 1px 0 rgb(255 255 255 / 0.5), inset -1px -1px 0 rgb(0 0 0 / 0.4);
+  }
+  .b88:has(img) { padding: 0; }
+  .b88 img { image-rendering: pixelated; }
+  .b88:hover { filter: brightness(1.2); }
+  .b88:active { transform: translate(1px, 1px); filter: brightness(0.9); }
+  .ico {
+    width: 23px; height: 23px; flex: none; display: grid; place-items: center;
+    background: #fff; color: hsl(var(--h) 75% 30%); font: 700 15px/1 var(--pixel); border: 1px solid #000;
+  }
+  .txt {
+    color: #fff; font: 600 10px/1.05 var(--pixel); text-transform: uppercase; text-shadow: 1px 1px 0 #000;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+</style>

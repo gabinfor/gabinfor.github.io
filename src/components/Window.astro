@@ -1,0 +1,14 @@
+---
+interface Props { title: string; icon?: string; class?: string; tag?: 'section' | 'main' | 'aside' }
+const { title, icon, class: className, tag: Tag = 'section' } = Astro.props;
+---
+<Tag class:list={['window', className]}>
+  <div class="titlebar">
+    <span class="tb-title">{icon && <span aria-hidden="true">{icon} </span>}{title}</span>
+    <span class="tb-btns">
+      <button type="button" class="tb-btn" data-win="min" aria-label="Minimize" aria-expanded="true">_</button>
+      <button type="button" class="tb-btn" data-win="close" aria-label="Close">×</button>
+    </span>
+  </div>
+  <div class="win-body"><slot /></div>
+</Tag>

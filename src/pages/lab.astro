@@ -2,8 +2,42 @@
 import Base from '../layouts/Base.astro';
 import GpuBlobs from '../components/GpuBlobs.astro';
 ---
-<Base title="Lab" description="Interactive experiments: WebGPU, shaders, and other toys.">
-  <h1>Lab</h1>
-  <p class="prose">A shelf for interactive experiments. Each one is a component you can also drop into any post.</p>
-  <GpuBlobs height="70vh" hue={0.15} caption="001 · Raymarched metaballs (WebGPU, WGSL)" />
+<Base title="lab" description="Interactive experiments: WebGPU, shaders, and other toys.">
+  <h1>⚗ The Lab</h1>
+  <p class="prose">A shelf of interactive experiments. Each one is a component I can also drop into any post.</p>
+
+  <h2>001 · sky scrubber</h2>
+  <p class="prose">The background is drawn live in a tiny canvas. Drag to set the hour yourself.</p>
+  <div class="scrub">
+    <input type="range" id="hour" min="0" max="23.99" step="0.05" aria-label="Hour of day" />
+    <output id="hour-out" class="pixel">--:--</output>
+    <button type="button" class="btn" id="hour-reset">↺ real time</button>
+  </div>
+
+  <h2>002 · gooey blobs</h2>
+  <GpuBlobs height="420px" hue={0.15} caption="Raymarched metaballs, WebGPU + WGSL, rendered at 1/3 resolution" />
 </Base>
+<style>
+  .scrub { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  input[type='range'] { flex: 1 1 220px; accent-color: var(--accent); }
+  output { font-size: 18px; min-width: 4ch; }
+</style>
+<script>
+  const input = document.getElementById('hour') as HTMLInputElement;
+  const out = document.getElementById('hour-out')!;
+  const fmt = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+  let dragging = false;
+  addEventListener('skychange', (e) => {
+    if (!dragging) input.value = String(e.detail.h);
+    out.textContent = fmt(e.detail.h);
+  });
+  const h0 = window.__skyOverride ?? window.__skyHour();
+  input.value = String(h0);
+  out.textContent = fmt(h0);
+  input.addEventListener('input', () => {
+    dragging = true;
+    dispatchEvent(new CustomEvent('sky:set', { detail: Number(input.value) }));
+  });
+  input.addEventListener('change', () => (dragging = false));
+  document.getElementById('hour-reset')!.addEventListener('click', () => dispatchEvent(new CustomEvent('sky:set', { detail: null })));
+</script>
