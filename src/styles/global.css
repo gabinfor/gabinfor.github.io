@@ -83,6 +83,9 @@ h3 { font-size: 17px; margin: 1.4em 0 0.4em; }
 .tb-btn .icon { vertical-align: 0; }
 .win-body { padding: 14px 16px; }
 .window.collapsed .win-body { display: none; }
+/* the minimize button turns into an expand button while the window is rolled up */
+.titlebar .tb-btn .i-max, .window.collapsed .titlebar .tb-btn .i-min { display: none; }
+.window.collapsed .titlebar .tb-btn .i-max { display: inline-block; }
 .window.shake { animation: shake 0.35s steps(4); }
 @keyframes shake { 25% { transform: translateX(-4px); } 50% { transform: translateX(4px); } 75% { transform: translateX(-2px); } }
 

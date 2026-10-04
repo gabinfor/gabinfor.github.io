@@ -116,6 +116,7 @@ addEventListener('click', (e) => {
     if (win.dataset.win === 'min') {
       const collapsed = w.classList.toggle('collapsed');
       win.setAttribute('aria-expanded', String(!collapsed));
+      win.setAttribute('aria-label', collapsed ? 'Expand' : 'Minimize');
     } else {
       // You can't close the internet.
       w.classList.remove('shake'); void (w as HTMLElement).offsetWidth; w.classList.add('shake');

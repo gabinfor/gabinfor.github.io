@@ -174,7 +174,7 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
       addEventListener('skychange', (e) => { show(e.detail.h); weatherEl.textContent = e.detail.weather; });
       show(window.__skyOverride ?? window.__skyHour()); // don't wait for the first frame
       weatherEl.textContent = document.documentElement.dataset.weather ?? '…';
-      // On phones, the status and radio windows start minimized (tap _ to open), so the
+      // On phones, the status and radio windows start minimized (tap the expand button to open), so the
       // content comes first and more of the scene shows. Only on the first visit.
       if (matchMedia('(max-width: 760px)').matches) {
         try {
@@ -182,7 +182,8 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
             sessionStorage.setItem('mobile-collapsed', '1');
             for (const w of document.querySelectorAll<HTMLElement>('.status, .radio-win')) {
               w.classList.add('collapsed');
-              w.querySelector('[data-win="min"]')?.setAttribute('aria-expanded', 'false');
+              const b = w.querySelector('[data-win="min"]');
+              b?.setAttribute('aria-expanded', 'false'); b?.setAttribute('aria-label', 'Expand');
             }
           }
         } catch {}
@@ -244,15 +245,17 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
     .page { padding-top: 18px; }
     .banner { margin-bottom: 12px; }
     .layout { gap: 12px; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'nav' 'main' 'radio' 'status'; }
-    /* navigation: one swipeable row instead of a wrapped block */
-    .nav-btns { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: -2px; padding: 2px; }
-    .nav-btns::-webkit-scrollbar { display: none; }
-    .nav-btns .btn { flex: none; }
+    /* navigation: a compact 3×2 grid, everything visible at once */
+    .nav-btns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .nav-btns .btn { justify-content: center; gap: 5px; padding: 7px 4px; font-size: 12px; min-width: 0; white-space: nowrap; }
     .layout > :global(.nav) .win-body { padding: 8px; }
     .layout > :global(.main) { min-height: 0; }
     .stat-btns { flex-direction: row; flex-wrap: wrap; }
     /* room at the end of the page to look at the valley, like reaching the ground */
     .scene-gap { display: block; height: 42svh; }
+  }
+  @media (max-width: 360px) {
+    .nav-btns .btn { gap: 3px; padding: 7px 2px; font-size: 11px; }
   }
 
   .foot { margin-top: 24px; }
