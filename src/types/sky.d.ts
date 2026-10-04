@@ -19,7 +19,6 @@ declare global {
     'sky:timelapse': Event;
     'sky:lapse': CustomEvent<boolean>;
     'sky:cloud': CustomEvent<'cat'>;
-    'sky:look': CustomEvent<number>;
     'mc:spawn': CustomEvent<'creeper' | 'zombie' | 'skeleton'>;
     'sky:bloom': Event;
   }

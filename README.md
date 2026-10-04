@@ -41,7 +41,6 @@ npm run dev
 
 ## Secrets (spoilers!)
 
-- At the very top of a page, keep scrolling up: the camera tilts up into the sky (the Milky Way at night, tall clouds by day). Scroll down, press Esc, or use "back to earth" to return.
 
 - Click the night sky for fireworks, the day sky to startle birds, and the sun for… see for yourself.
 - Konami code (↑↑↓↓←→←→BA) starts a fireworks finale.

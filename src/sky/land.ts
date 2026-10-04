@@ -417,9 +417,9 @@ export class Land {
     if (W < 160) return; // phones: keep the view open
     const sh = this.shader(st, L_FRONT);
     const cols = { body: rgb(sh(C.fgPine)), lit: rgb(sh(C.fgPineLit)), dark: rgb(sh(C.fgPineDark)), deep: rgb(sh(C.fgPineDeep)), trunk: rgb(sh(C.bark)), trunkLit: rgb(sh(C.barkLit)) };
-    bigPine(g, 2, H + 1, Math.round(H * 0.56), cols, st.snow, 3);
-    bigPine(g, 15, H + 1, Math.round(H * 0.36), cols, st.snow, 6);
-    bigPine(g, W - 6, H + 1, Math.round(H * 0.5), cols, st.snow, 4);
+    simplePine(g, 4, H + 1, Math.round(H * 0.56), cols, st.snow);
+    simplePine(g, 20, H + 1, Math.round(H * 0.38), cols, st.snow);
+    simplePine(g, W - 8, H + 1, Math.round(H * 0.5), cols, st.snow);
     // tall grass along the bottom edge
     const grass = new Pixels(), grassC = rgb(sh(st.snow > 0.5 ? mix(C.fgGrass, C.snow, 0.5) : C.fgGrass));
     for (let x = 0; x < W; x++) {
@@ -495,76 +495,46 @@ function pine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow
 }
 
 /**
- * A big, close-up pine, built like a real one: a gently leaning trunk; separate branches
- * on each side with uneven lengths (the odd one short or missing), upturned near the top
- * and drooping lower down; each branch a tapered clump with a lit top surface, a shadowed
- * underside and needle tufts hanging off its lower edge. Lower branches overlap the ones
- * above, and short front clumps break up the line of the trunk.
+ * A big, close-up pine in the classic pixel-art style: a few clean stacked tiers with
+ * stair-stepped sides, flat two-tone shading (lit left, darker right, a darker right
+ * edge), a crisp shadow under each tier, little hanging tips, and a plain trunk.
  */
-function bigPine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow: number, seed: number) {
-  const r = rng(Math.floor(seed * 7919) + 11);
-  const lean = (u: number) => Math.round(Math.sin(u * Math.PI * 1.15 + seed) * h * 0.03 + u * h * 0.02 * (seed % 2 ? 1 : -1));
-  const trunkX = (u: number) => cx + lean(u);
-  const yAt = (u: number) => Math.round(baseY - u * h);
-  const tones = [cols.deep, cols.dark, cols.body, cols.lit];
-  const tone = (v: number, x: number, y: number) => tones[Math.floor(clamp(v * 4 + (dither(x, y) - 0.5) * 0.9, 0, 3.99))];
-
-  // trunk: thins upward, lit left edge, bark notches
-  const trunk = new Pixels();
-  for (let y = yAt(0.97); y <= baseY; y++) {
-    const u = (baseY - y) / h, w = u < 0.45 ? 3 : u < 0.8 ? 2 : 1, x0 = trunkX(u) - (w >> 1);
-    for (let k = 0; k < w; k++) trunk.add(k === 0 && w > 1 ? cols.trunkLit : (y + k * 2) % 5 === 0 ? cols.deep : cols.trunk, x0 + k, y);
-  }
-  trunk.flush(g);
-
-  // one branch: from the trunk at height u, out to `side` (-1 left, 1 right)
-  const branch = (u: number, side: number, len: number, front = false) => {
-    const px = new Pixels(), x0 = trunkX(u), y0 = yAt(u);
-    const droop = 0.22 + 0.75 * (1 - u) ** 1.3;           // lower branches sag more
-    const lift = u > 0.7 ? (u - 0.7) * 1.1 : 0;            // upper ones point up a little
-    const thick = Math.max(2, len * (front ? 0.45 : 0.34));
-    for (let d = 0; d <= len; d++) {
-      const f = d / Math.max(1, len), x = x0 + side * d;
-      const top = Math.round(y0 - thick * 0.35 + droop * len * f ** 1.7 - lift * len * f);
-      const tk = Math.max(1, Math.round(thick * (1 - f) ** 0.6 + (f < 0.95 ? 1 : 0)));
-      for (let y = top; y <= top + tk; y++) {
-        const rel = (y - top) / Math.max(1, tk);
-        // lit top surface, shadowed underside; inner parts (near the trunk) and the right side darker
-        let v = 0.72 - rel * 0.7 + f * 0.12 - (side > 0 ? 0.1 : 0) - (front ? 0 : (1 - f) * 0.12);
-        if (rel < 0.2 && (x + y) % 3) v += 0.25; // sunlit needle tops
-        let c = tone(v, x, y);
-        if (snow > 0 && rel < 0.34 && dither(x, y) < snow * 0.95) c = SNOW;
-        px.add(c, x, y);
+function simplePine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow: number) {
+  const trunkH = Math.round(h * 0.1), crownH = h - trunkH, top = baseY - h;
+  const tiers = h > 90 ? 5 : 4, maxHalf = Math.round(h * 0.27);
+  const th = Math.round(crownH * 0.32), step = (crownH - th) / (tiers - 1);
+  const px = new Pixels();
+  // trunk: lit left column, plain body
+  const tw = h > 60 ? 4 : 3;
+  for (let y = baseY - trunkH - 2; y < baseY; y++) for (let k = 0; k < tw; k++) px.add(k === 0 ? cols.trunkLit : cols.trunk, cx - (tw >> 1) + k, y);
+  px.flush(g);
+  // tiers bottom-up, so each tier above overlaps (and shades) the one below
+  for (let i = tiers - 1; i >= 0; i--) {
+    const t0 = Math.round(top + i * step), hw = maxHalf * (0.32 + 0.68 * ((i + 1) / tiers));
+    const startHalf = i === 0 ? 0 : hw * 0.16;
+    const tier = new Pixels();
+    for (let r = 0; r <= th; r++) {
+      // a gentle zigzag of needle tufts along the sides keeps it pixel-art, not vector
+      // each tier flares out toward its bottom, so the outline steps in where the next one starts
+      const half = Math.round(startHalf + (hw - startHalf) * (r / th) ** 1.5) + ((r + i) % 4 === 0 ? 1 : 0), y = t0 + r;
+      for (let dx = -half; dx <= half; dx++) {
+        const c = dx === half || dx === half - 1 && half > 3 ? cols.dark   // shaded right edge
+          : dx < 0 ? cols.lit : cols.body;                                  // lit left, darker right
+        tier.add(snow > 0.2 && r <= 1 ? SNOW : c, cx + dx, y);
       }
-      // needle tufts hanging from the lower edge, more toward the tip
-      if (f > 0.2 && (d + Math.floor(seed)) % 3 === 0) {
-        const hang = 1 + (r() < 0.5 ? 1 : 0);
-        for (let k = 1; k <= hang; k++) px.add(k === hang ? cols.deep : cols.dark, x, top + tk + k);
-      }
+      // the tier's top face catches a bright edge on the lit side
+      if (r > 0 && half > 1 && !(snow > 0.2 && r <= 1)) tier.add(cols.lit, cx - half, y);
     }
-    // a twig of needles poking past the tip
-    const tipY = Math.round(y0 - thick * 0.35 + droop * len - lift * len);
-    px.add(cols.body, x0 + side * (len + 1), tipY); px.add(cols.dark, x0 + side * (len + 1), tipY + 1);
-    px.flush(g);
-  };
-
-  // branch heights: denser toward the top
-  const heights: number[] = [];
-  for (let u = 0.14; u < 0.95; u += (0.085 - u * 0.05) * (0.8 + 0.4 * r())) heights.push(u);
-  // draw from the top down, so each lower branch overlaps the shadow of the one above
-  for (const u of heights.reverse()) {
-    const maxLen = h * 0.32 * (1 - u) ** 0.9 + 2;
-    for (const side of r() < 0.5 ? [-1, 1] : [1, -1]) {
-      if (r() < 0.07 && u < 0.85) continue;               // a missing branch
-      branch(u, side, Math.round(maxLen * (0.6 + 0.55 * r())));
+    // a scalloped lower edge: little hanging tips every few pixels
+    for (let dx = -Math.round(hw); dx <= Math.round(hw); dx += 4) tier.add(dx < 0 ? cols.body : cols.dark, cx + dx, t0 + th + 1);
+    // the shadow this tier casts on the one below, just under its bottom edge
+    if (i < tiers - 1) {
+      const below = new Pixels(), half = Math.round(hw) - 1;
+      for (let dx = -half; dx <= half; dx++) below.add(cols.deep, cx + dx, t0 + th + 1, 1, 2);
+      below.flush(g);
     }
-    if (r() < 0.35) branch(u - 0.02, r() < 0.5 ? -1 : 1, Math.round(maxLen * 0.35), true); // a short front clump over the trunk
+    tier.flush(g);
   }
-  // the leader: a pointed tip
-  const tip = new Pixels(), tx = trunkX(0.97), ty = yAt(0.97);
-  for (let k = 0; k < Math.max(3, Math.round(h * 0.05)); k++) tip.add(k < 2 ? cols.lit : cols.body, tx, ty - k);
-  tip.add(cols.dark, tx + 1, ty - 1); tip.add(cols.body, tx - 1, ty);
-  tip.flush(g);
 }
 
 const SNOW = 'rgb(236,240,252)';

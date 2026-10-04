@@ -1,12 +1,13 @@
 // The pixel sky: a low-res canvas behind the page, synced to the visitor's local
 // time, with weather, wildlife and fireworks. See Sky.astro for the controls.
 import { type RGB, NIGHT, Pixels, clamp, disc, dither, glow, hex, mix, rgb, rng, skyAt, smooth } from './palette';
-import { CAT_AWAKE, CLOUD_SHAPES, GLYPHS, HOUSE_CHIMNEY, HOUSE_WINDOW } from './sprites';
+import { CAT_SCARED, CLOUD_SHAPES, GLYPHS, HOUSE_CHIMNEY, HOUSE_WINDOW } from './sprites';
 import { L_FAR, L_FRONT, L_LAKE, L_MID, L_MOUNTAINS, L_NEAR, Land } from './land';
 import { type Weather, WeatherFx, forecast, isWeather } from './weather';
 import { Fireworks } from './fireworks';
 import { type MobKind, Minecraft } from './mc';
-import { UpperSky } from './upper';
+import { Planes } from './planes';
+import { MilkyWay } from './milkyway';
 import { type CloudLook, cumulus, toRuns } from './clouds';
 import { blip, noise, toast } from '../scripts/clicky';
 import './eggs';
@@ -30,12 +31,11 @@ type Cloud = CloudLook & {
   x: number; y: number; speed: number; th: number; shape?: ShapeName; normal?: CloudLook;
   /** Flat, blocky Minecraft version of this cloud (blocky mode), made on first use. */
   blocky?: CloudLook;
-  /** Woken by a click: the cat lifts its head and tail until `until` (wall-clock seconds). */
+  /** Startled by a click: the cat leaps up, arched, until `until` (wall-clock seconds). */
   react?: { start: number; until: number };
 };
-// Speech bubbles and floating hearts from clicked cloud animals.
+// Speech bubbles from the clicked cloud cat.
 let bubbles: { text: string; cloud: Cloud; dx: number; until: number }[] = [];
-let hearts: { x: number; y: number; vy: number; life: number }[] = [];
 // The little "z"s a sleeping cloud cat breathes out.
 let zs: { x: number; y: number; life: number }[] = [];
 let nextZ = 0;
@@ -44,12 +44,8 @@ type Bird = { x: number; y: number; vx: number; vy: number; ph: number };
 let stars: Star[] = [];
 let clouds: Cloud[] = [];
 const land = new Land();
-const upper = new UpperSky();
-// The camera: scroll up at the top of the page and it tilts up into the sky.
-// `look` is where it's heading (0 = normal view, 1 = all sky), `cam` eases toward it.
-// PAN is how far up it can go, in sky pixels; everything else is drawn shifted by cam * PAN.
-let look = 0, cam = 0, PAN = 1;
-const panPx = () => Math.round(cam * PAN);
+const planes = new Planes();
+const milkyWay = new MilkyWay();
 const mc = new Minecraft(land);
 /** Blocky Minecraft look (the "minecraft" secret word toggles html[data-mc]). */
 const mcMode = () => document.documentElement.dataset.mc === 'on';
@@ -91,8 +87,8 @@ function shadeCloud(grid: Uint8Array, w: number, h: number, baseH: number): Clou
   return toRuns(w, h, px);
 }
 
-function shapeLook(name: ShapeName | 'catAwake'): CloudLook {
-  const rows = name === 'catAwake' ? CAT_AWAKE : CLOUD_SHAPES[name], w = rows[0].length, h = rows.length;
+function shapeLook(name: ShapeName | 'catScared'): CloudLook {
+  const rows = name === 'catScared' ? CAT_SCARED : CLOUD_SHAPES[name], w = rows[0].length, h = rows.length;
   const grid = Uint8Array.from(rows.join(''), (c) => (c === '#' ? 1 : 0));
   return shadeCloud(grid, w, h, 3);
 }
@@ -126,13 +122,16 @@ function squareGlow(cx: number, cy: number, r0: number, r1: number, strength: nu
   }
   px.flush(g);
 }
-let catLooks: [CloudLook, CloudLook] | null = null; // asleep / awake
+let catLooks: [CloudLook, CloudLook] | null = null; // asleep / startled
 
-function cloudPos(c: Cloud) {
-  return { x: Math.floor(c.x), y: Math.round(c.y * H) };
+/** Where a cloud is drawn now, including the startled cat's leap (up and back down in 0.7 s). */
+function cloudPos(c: Cloud, t = Date.now() / 1000) {
+  let dy = 0;
+  if (c.shape === 'cat' && c.react && t < c.react.start + 0.7) dy = -Math.round(Math.sin(((t - c.react.start) / 0.7) * Math.PI) * 7);
+  return { x: Math.floor(c.x), y: Math.round(c.y * H) + dy };
 }
 // Where the cat's head is in its frames (for the bubble and the z's).
-const CAT_HEAD = { x: 23, sleepY: 6, awakeY: 0 };
+const CAT_HEAD = { x: 24, sleepY: 8 };
 
 function pixelText(text: string, x: number, y: number, px: Pixels, color: string) {
   for (const ch of text) {
@@ -143,11 +142,11 @@ function pixelText(text: string, x: number, y: number, px: Pixels, color: string
   }
 }
 
-function drawBubblesAndHearts(t: number, n: number) {
+function drawBubbles(t: number, n: number) {
   const px = new Pixels();
   for (const b of bubbles) {
     const w = [...b.text].reduce((a, ch) => a + (GLYPHS[ch]?.[0].length ?? 1) + 1, 0) + 3, h = 9;
-    const p = cloudPos(b.cloud); // follows its cloud
+    const p = cloudPos(b.cloud, t); // follows its cloud (and its leap)
     const x = Math.round(p.x + b.dx - w / 2), y = p.y - h - 3;
     const edge = n > 0.5 ? '#9aa0c8' : '#30304a';
     px.add(edge, x + 1, y, w - 2, 1); px.add(edge, x + 1, y + h - 1, w - 2, 1);
@@ -159,11 +158,6 @@ function drawBubblesAndHearts(t: number, n: number) {
   for (const z of zs) {
     if (dither(z.x | 0, z.y | 0) >= z.life) continue;
     pixelText('Z', Math.round(z.x), Math.round(z.y), px, n > 0.5 ? 'rgba(200,205,240,0.9)' : 'rgba(255,255,255,0.95)');
-  }
-  for (const k of hearts) {
-    if (dither(k.x | 0, k.y | 0) >= k.life) continue;
-    const x = Math.round(k.x), y = Math.round(k.y);
-    px.add('#ff7ad9', x, y, 1, 1); px.add('#ff7ad9', x + 2, y, 1, 1); px.add('#ff7ad9', x, y + 1, 3, 1); px.add('#ff7ad9', x + 1, y + 2, 1, 1);
   }
   px.flush(g);
   bubbles = bubbles.filter((b) => t < b.until);
@@ -191,8 +185,8 @@ function layout() {
   if (Math.random() < 0.1) reshape(clouds[Math.floor(Math.random() * 2)], randomShape()); // lucky visit
 
   land.layout(W, H);
-  PAN = Math.round(H * 0.8);
-  upper.reset(W, H, PAN);
+  planes.reset(W, H);
+  milkyWay.reset(W, H);
   refl.width = W; refl.height = Math.max(1, land.lakeRows);
   const rf = rng(3);
   fireflies = Array.from({ length: 14 }, () => {
@@ -209,29 +203,23 @@ function layout() {
 // copied each frame with drawImage (a GPU blit) instead of re-uploading pixels.
 const gradCanvas = document.createElement('canvas');
 let gradKey = '';
-function drawGradient(top: RGB, bottom: RGB, zenith: RGB, pan: number) {
-  // Built once per colour change, tall enough for the whole camera range (world y from
-  // -PAN to H), then just slid into place, so panning costs nothing.
-  const key = `${top}|${bottom}|${zenith}|${PAN}|${W}x${H}`;
+function drawGradient(top: RGB, bottom: RGB) {
+  const key = `${top}|${bottom}|${W}x${H}`;
   if (key !== gradKey) {
     const N = 12, cols = Array.from({ length: N }, (_, i) => mix(top, bottom, i / (N - 1)));
-    // above the normal view the sky deepens toward the zenith
-    const M = 10, up = Array.from({ length: M }, (_, i) => mix(top, zenith, i / (M - 1)));
-    const GH = PAN + H, img = g.createImageData(W, GH), d = img.data, span = H * 0.8;
-    for (let yy = 0; yy < GH; yy++) {
-      const yw = yy - PAN, band = yw >= 0 ? cols : up;
-      const v = yw >= 0 ? Math.min(1, yw / span) * (N - 1) : Math.min(1, -yw / PAN) * (M - 1);
-      const b0 = Math.floor(v), f = v - b0, b1 = Math.min(band.length - 1, b0 + 1);
+    const img = g.createImageData(W, H), d = img.data, span = H * 0.8;
+    for (let y = 0; y < H; y++) {
+      const v = Math.min(1, y / span) * (N - 1), b0 = Math.floor(v), f = v - b0, b1 = Math.min(N - 1, b0 + 1);
       for (let x = 0; x < W; x++) {
-        const c = f > dither(x, yy) ? band[b1] : band[b0], i = (yy * W + x) * 4;
+        const c = f > dither(x, y) ? cols[b1] : cols[b0], i = (y * W + x) * 4;
         d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
       }
     }
-    gradCanvas.width = W; gradCanvas.height = GH;
+    gradCanvas.width = W; gradCanvas.height = H;
     gradCanvas.getContext('2d')!.putImageData(img, 0, 0);
     gradKey = key;
   }
-  g.drawImage(gradCanvas, 0, pan - PAN);
+  g.drawImage(gradCanvas, 0, 0);
 }
 
 const moonPhase = () => {
@@ -296,14 +284,17 @@ function drawMoon(m: SkyMath, horizon: number, R: number, cover: number, top: RG
   }
 }
 
-function drawClouds(cover: number, cols: string[], t: number) {
+function drawClouds(cover: number, tones: RGB[], bottom: RGB, t: number) {
   for (const c of clouds) {
+    // aerial perspective: clouds lower in the sky (farther away) fade toward the horizon haze
+    const haze = clamp((c.y - 0.12) * 1.3, 0, 0.42);
+    const cols = tones.map((tc) => rgb(mix(tc, bottom, haze)));
     const v = smooth(c.th - 0.06, c.th + 0.06, cover);
     if (v <= 0) continue;
-    const { x: x0, y: y0 } = cloudPos(c);
+    const { x: x0, y: y0 } = cloudPos(c, t);
     const look: CloudLook = mcMode() && !c.shape ? (c.blocky ??= blockyLook(c.w)) : c;
-    if (c.shape === 'cat') { // asleep, or awake for a moment after a click
-      catLooks ??= [shapeLook('cat'), shapeLook('catAwake')];
+    if (c.shape === 'cat') { // asleep, or arched and startled for a moment after a click
+      catLooks ??= [shapeLook('cat'), shapeLook('catScared')];
       Object.assign(c, catLooks[c.react && t < c.react.until ? 1 : 0]);
     }
     const px = new Pixels(); // one fill per tone; tones within a cloud don't overlap
@@ -333,14 +324,12 @@ function drawMeteors(ctx: CanvasRenderingContext2D) {
   }
 }
 
-function drawBloom(m: SkyMath, t: number, pan: number) {
+function drawBloom(m: SkyMath, t: number) {
   // Nothing glowing (an overcast day)? Hide the layer so the browser skips blurring it.
   const glowing = lights.sun || lights.moon || lights.stars > 0.3 || fireworks.active || meteors.length || m.n > 0.5 || weather.flash > 0 || mc.active;
   bloomCanvas.style.visibility = glowing ? '' : 'hidden';
   if (!glowing) return;
   bg.clearRect(0, 0, W, H);
-  bg.save();
-  bg.translate(0, pan);
   const { sun: s, moon: mo } = lights;
   if (s) { bg.fillStyle = rgb(s.c, 0.5 * s.vis); disc(bg, s.x, s.y, s.r); }
   if (mo) { bg.fillStyle = `rgba(240,236,210,${0.35 * mo.vis * mo.lit})`; disc(bg, mo.x, mo.y, mo.r); }
@@ -350,7 +339,8 @@ function drawBloom(m: SkyMath, t: number, pan: number) {
   }
   fireworks.draw(bg);
   drawMeteors(bg);
-  upper.drawBloom(bg, t, lights.stars, pan > 0, m.n);
+  milkyWay.drawBloom(bg, lights.stars);
+  planes.drawBloom(bg, t, m.n);
   // Sky lights are behind the terrain: punch out its silhouette so nothing glows through a mountain.
   bg.globalCompositeOperation = 'destination-out';
   bg.fillStyle = '#000';
@@ -358,7 +348,7 @@ function drawBloom(m: SkyMath, t: number, pan: number) {
   bg.globalCompositeOperation = 'source-over';
   // Their reflections glow in the lake too; then hide whatever the hills cover.
   bg.globalAlpha = 0.6;
-  reflect(bg, bloomCanvas, t, pan);
+  reflect(bg, bloomCanvas, t);
   bg.globalAlpha = 1;
   bg.globalCompositeOperation = 'destination-out';
   bg.fill(land.groundPath);
@@ -374,7 +364,6 @@ function drawBloom(m: SkyMath, t: number, pan: number) {
     villageWindows(bg, t);
   }
   weather.drawBolt(bg);
-  bg.restore();
 }
 
 // Village windows on the far hill: lit at night, a few switch off now and then.
@@ -387,16 +376,15 @@ function villageWindows(ctx: CanvasRenderingContext2D, t: number) {
  * Mirror what's above the waterline into the lake: squashed 4:1 so the narrow strip of
  * visible water shows the mountains and some sky (stars, moon, fireworks), with a ripple.
  */
-function reflect(dst: CanvasRenderingContext2D, src: HTMLCanvasElement, t: number, pan = 0) {
-  // `dst` is drawn in world coordinates; the source pixels sit `pan` rows lower on screen.
-  const top = land.lakeTop, rows = land.lakeRows, srcH = Math.min(top + pan, rows * 4);
+function reflect(dst: CanvasRenderingContext2D, src: HTMLCanvasElement, t: number) {
+  const top = land.lakeTop, rows = land.lakeRows, srcH = Math.min(top, rows * 4);
   if (rows < 2 || srcH < 1) return;
   // 1. One scaled copy: flip the band above the waterline and squash it 4:1 (nearest-neighbour,
   //    so row j of `refl` is source row top-1-4j).
   rg.clearRect(0, 0, W, rows);
   rg.imageSmoothingEnabled = false;
   rg.setTransform(1, 0, 0, -0.25, 0, srcH / 4);
-  rg.drawImage(src, 0, top + pan - srcH, W, srcH, 0, 0, W, srcH);
+  rg.drawImage(src, 0, top - srcH, W, srcH, 0, 0, W, srcH);
   rg.setTransform(1, 0, 0, 1, 0, 0);
   // 2. Lay it on the water in 2-row strips, each nudged sideways for the ripple.
   for (let j = 1; j < rows; j += 2) {
@@ -447,14 +435,11 @@ function draw(h: number, t: number) {
   let { top, bottom } = skyAt(h);
   top = mix(top, mix([120, 126, 140], [24, 26, 40], m.n), wx.gloom * 0.75);
   bottom = mix(bottom, mix([170, 174, 184], [40, 42, 58], m.n), wx.gloom * 0.7);
-  const pan = panPx(), zenith = mix(top, [4, 6, 22], 0.5);
   mark();
-  drawGradient(top, bottom, zenith, pan);
+  drawGradient(top, bottom);
   mark('gradient');
   lights = { stars: 0 };
   const horizon = Math.round(H * 0.74), R = Math.max(4, Math.round(Math.min(W, H) * 0.05));
-  g.save();
-  g.translate(0, pan); // from here on, world coordinates
 
   const sa = smooth(0.55, 0.95, m.n) * (1 - wx.cover * 0.9);
   lights.stars = sa;
@@ -462,17 +447,14 @@ function draw(h: number, t: number) {
   const hi = mix(mix(mix([255, 255, 255], bottom, 0.25), gray, wx.gloom * 0.85), [50, 54, 96], m.n * 0.85);
   // five cloud tones (highlight .. base shadow); a low sun warms the highlights
   const lowSun = m.sunP >= 0 && m.sunP <= 1 ? 1 - smooth(0, 0.4, m.e) : 0;
-  const cloudCols = [
-    rgb(mix(mix(hi, [255, 255, 255], 0.6 * (1 - m.n)), [255, 170, 120], lowSun * 0.45)),
-    rgb(mix(mix(hi, [255, 255, 255], 0.15 * (1 - m.n)), [255, 160, 130], lowSun * 0.25)),
-    rgb(mix(hi, top, 0.16)),
-    rgb(mix(hi, top, 0.34)),
-    rgb(mix(mix(hi, top, 0.5), [70, 74, 120], 0.2)),
+  const cloudTones: RGB[] = [
+    mix(mix(hi, [255, 255, 255], 0.6 * (1 - m.n)), [255, 170, 120], lowSun * 0.45),
+    mix(mix(hi, [255, 255, 255], 0.15 * (1 - m.n)), [255, 160, 130], lowSun * 0.25),
+    mix(hi, top, 0.16),
+    mix(hi, top, 0.34),
+    mix(mix(hi, top, 0.5), [70, 74, 120], 0.2),
   ];
-  if (pan > 0) { // the upper sky only shows when looking up
-    // the tall cumulus show by day, and at night only when it's actually cloudy (so the stars stay clear)
-    upper.draw(g, sa, cloudCols, 0.5 * (1 - m.n * 0.75) * (1 - wx.cover * 0.6), m.n < 0.6 || wx.cover > 0.5);
-  }
+  milkyWay.draw(g, sa); // dark, clear nights only
   if (sa > 0.02) {
     const px = new Pixels();
     for (const s of stars) {
@@ -487,9 +469,9 @@ function draw(h: number, t: number) {
   if (m.sunP >= 0 && m.sunP <= 1) drawSun(m, horizon, R, wx.cover, bottom, t);
   else drawMoon(m, horizon, R, wx.cover, top);
 
-  upper.drawPlane(g, t, m.n); // above the low clouds' level, so they can drift in front
-  drawClouds(wx.cover, cloudCols, t);
-  drawBubblesAndHearts(t, m.n);
+  planes.draw(g, t, m.n); // above the low clouds' level, so they can drift in front
+  drawClouds(wx.cover, cloudTones, bottom, t);
+  drawBubbles(t, m.n);
 
   fireworks.draw(g);
   drawCritters(top, t);
@@ -503,7 +485,7 @@ function draw(h: number, t: number) {
   weather.drawPrecip(g, 0, m.n, bottom);
   land.draw(g, L_LAKE);
   g.globalAlpha = 0.65;
-  reflect(g, canvas, t, pan); // reads the rows above the waterline, already drawn this frame
+  reflect(g, canvas, t); // reads the rows above the waterline, already drawn this frame
   g.globalAlpha = 1;
   land.drawLakeTint(g, st);
   mark('reflection');
@@ -522,11 +504,10 @@ function draw(h: number, t: number) {
   land.draw(g, L_FRONT);
   weather.drawFog(g, m.n, bottom);
   weather.drawBolt(g);
-  g.restore(); // back to screen space
-  weather.drawPrecip(g, 4, m.n, bottom); // foreground rain fills the screen, wherever the camera looks
+  weather.drawPrecip(g, 4, m.n, bottom); // foreground: in front of everything
   weather.drawFlash(g);
   mark('landAndWeather');
-  if (bloomOn()) drawBloom(m, t, pan);
+  if (bloomOn()) drawBloom(m, t);
   mark('bloom');
 }
 
@@ -537,15 +518,13 @@ function update(dt: number, t: number, m: SkyMath) {
   weather.update(dt, t, [land.front, ...land.hills]);
   fireworks.update(dt, W, H, land.ground);
   const wind = weather.p.wind;
-  for (const k of hearts) { k.y += k.vy * dt; k.x += Math.sin(k.y * 0.5) * 0.15; k.life -= dt * 0.45; }
   if ((nextZ -= dt) <= 0) {
     nextZ = 1.6;
     for (const c of clouds) if (c.shape === 'cat' && !(c.react && t < c.react.until) && smooth(c.th - 0.06, c.th + 0.06, weather.p.cover) > 0.5)
-      zs.push({ x: c.x + CAT_HEAD.x + 2, y: c.y * H + CAT_HEAD.sleepY - 2, life: 1 });
+      zs.push({ x: c.x + CAT_HEAD.x + 3, y: c.y * H + CAT_HEAD.sleepY - 3, life: 1 });
   }
   for (const z of zs) { z.y -= 3 * dt; z.x += 1.5 * dt; z.life -= dt * 0.45; }
   zs = zs.filter((z) => z.life > 0);
-  hearts = hearts.filter((k) => k.life > 0);
   for (const c of clouds) {
     c.x += c.speed * wind * dt;
     if (c.react && t >= c.react.until) c.react = undefined;
@@ -574,14 +553,11 @@ function update(dt: number, t: number, m: SkyMath) {
   smoke = smoke.filter((p) => p.age < 5);
 
   // shooting stars on clear nights
-  if (m.n > 0.7 && weather.p.cover < 0.5 && Math.random() < dt / (cam > 0.5 ? 7 : 20)) {
+  if (m.n > 0.7 && weather.p.cover < 0.5 && Math.random() < dt / 20) {
     const dir = Math.random() < 0.5 ? 1 : -1;
-    meteors.push({ x: Math.random() * W, y: -panPx() + Math.random() * H * 0.4, vx: dir * (50 + Math.random() * 30), vy: 22, life: 0.7 });
+    meteors.push({ x: Math.random() * W, y: Math.random() * H * 0.3, vx: dir * (50 + Math.random() * 30), vy: 22, life: 0.7 });
   }
-  // the camera eases toward where you're looking
-  cam = still ? look : cam + (look - cam) * Math.min(1, dt * 5);
-  if (Math.abs(look - cam) < 0.002) cam = look;
-  upper.update(dt, wind, weather.p.rain < 0.1 && weather.p.cover < 0.8, m.n < 0.4, panPx(), t);
+  planes.update(dt, weather.p.rain < 0.1 && weather.p.cover < 0.8, m.n < 0.4, t);
   for (const s of meteors) { s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; }
   meteors = meteors.filter((s) => s.life > 0);
 }
@@ -624,8 +600,7 @@ function everyMinute() {
 }
 
 function tick(now: number) {
-  const panning = look !== cam;
-  if (now - last >= 83 || last === 0 || panning) { // ~12 fps for that low-fi feel (smooth while the camera moves)
+  if (now - last >= 83 || last === 0) { // ~12 fps for that low-fi feel
     const dt = Math.min(0.25, (now - lastSim) / 1000);
     last = lastSim = now;
     const h = hourNow(now), t = Date.now() / 1000;
@@ -637,65 +612,15 @@ function tick(now: number) {
     draw(h, t);
     const minute = Math.floor(h * 60);
     if (minute !== lastMinute) { lastMinute = minute; everyMinute(); announce(h); }
-    applyCamera(h);
   }
   schedule();
 }
 
-/** Move the page with the camera: it slides down and fades as you look up. */
-const lookedUp = new Set<string>();
-function applyCamera(h: number) {
-  // The canvas moves in whole sky pixels; nudge it by the leftover fraction so the pan
-  // glides instead of stepping 4 screen pixels at a time. The page moves by the exact amount.
-  const page = document.querySelector<HTMLElement>('.page'), exact = cam * PAN * S, root = document.documentElement;
-  const sky = document.querySelector<HTMLElement>('.sky');
-  if (sky) sky.style.transform = cam ? `translateY(${(cam * PAN - panPx()) * S}px)` : '';
-  if (page) { page.style.transform = exact ? `translateY(${exact}px)` : ''; page.style.opacity = exact ? String(1 - cam * 0.92) : ''; }
-  root.classList.toggle('skyview', cam > 0.3);
-  root.style.overflow = cam > 0.001 ? 'hidden' : '';
-  if (cam > 0.95) {
-    const night = window.__skyMath(h).n > 0.6, id = night ? 'night' : 'day';
-    if (!lookedUp.has(id)) {
-      lookedUp.add(id);
-      toast(night ? 'you found the milky way. look for the big dipper.' : 'look up more often.', night ? 'Stargazer' : 'Head in the Clouds', night ? 'moon' : 'cloud');
-    }
-  }
-}
-
-function setLook(v: number) {
-  look = clamp(v, 0, 1);
-  if (look < 0.03) look = 0;
-  wake();
-}
-// Only tilt up once the page has been resting at the top for a moment, so the
-// momentum of scrolling back to the top doesn't do it by accident.
-let atTopSince = scrollY <= 0 ? -Infinity : Infinity; // Infinity = not at the top
-addEventListener('scroll', () => { if (scrollY > 0) atTopSince = Infinity; else if (atTopSince === Infinity) atTopSince = performance.now(); }, { passive: true });
-const restingAtTop = () => scrollY <= 0 && performance.now() - atTopSince > 350;
-addEventListener('wheel', (e) => {
-  if (e.ctrlKey || (e.target instanceof Element && e.target.closest('pre, textarea'))) return;
-  if (look > 0 || cam > 0.001 || (e.deltaY < 0 && restingAtTop())) {
-    e.preventDefault();
-    setLook(look - (e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY) / 320); // ~3 notches to look all the way up
-  }
-}, { passive: false });
-let touchY: number | null = null;
-addEventListener('touchstart', (e) => { touchY = e.touches[0].clientY; }, { passive: true });
-addEventListener('touchmove', (e) => {
-  if (touchY === null) return;
-  const y = e.touches[0].clientY, dy = y - touchY;
-  touchY = y;
-  if (look > 0 || (dy > 0 && restingAtTop())) { e.preventDefault(); setLook(look + dy / 300); }
-}, { passive: false });
-addEventListener('touchend', () => (touchY = null));
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && look > 0) setLook(0); });
-addEventListener('sky:look', (e) => setLook(e.detail));
-document.addEventListener('astro:after-swap', () => { look = cam = 0; applyCamera(hourNow(performance.now())); });
 
 let raf = 0, timer = 0;
 function schedule(immediate = false) {
   cancelAnimationFrame(raf); clearTimeout(timer);
-  const busy = lapse || fireworks.active || mc.active || look !== cam;
+  const busy = lapse || fireworks.active || mc.active;
   if (still && !busy && !immediate) timer = window.setTimeout(() => (raf = requestAnimationFrame(tick)), 30_000);
   else raf = requestAnimationFrame(tick);
 }
@@ -710,7 +635,6 @@ if (perfOn) (window as unknown as { __skyShapes: unknown }).__skyShapes = () =>
   clouds.filter((c) => c.shape).map((c) => ({ shape: c.shape, x: (c.x + c.w / 2) * S, y: (c.y * H + c.h / 2) * S }));
 if (perfOn) (window as unknown as { __skyMobs: unknown }).__skyMobs = () =>
   mc.mobs.map((m) => ({ kind: m.kind, state: m.state, ...mc.center(m, S) }));
-if (perfOn) (window as unknown as { __skyCam: unknown }).__skyCam = () => ({ look, cam, pan: panPx(), PAN });
 if (perfOn) (window as unknown as { __skyBench: unknown }).__skyBench = (frames = 60, step = 0) => {
   for (const k in perf) delete perf[k];
   let h = hourNow(performance.now());
@@ -762,18 +686,19 @@ const spotted = new Set<string>();
 addEventListener('pointerdown', (e) => {
   const target = e.target instanceof Element ? e.target : document.body;
   if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast')) return;
-  const x = e.clientX / S, y = e.clientY / S - panPx(), h = hourNow(performance.now()), m = window.__skyMath(h);
+  const x = e.clientX / S, y = e.clientY / S, h = hourNow(performance.now()), m = window.__skyMath(h);
   if (mc.pointerDown(x, y, Date.now() / 1000)) { wake(); return; } // clicked a mob
   const now = Date.now() / 1000;
   const shaped = clouds.find((c) => c.shape && smooth(c.th - 0.06, c.th + 0.06, weather.p.cover) > 0.5
     && x >= c.x && x <= c.x + c.w && y >= c.y * H - 4 && y <= c.y * H + c.h);
   if (shaped) {
-    // It wakes for a moment: lifts its head and tail, meows, then goes back to sleep.
-    shaped.react = { start: now, until: now + 2.2 };
-    bubbles.push({ text: 'MEOW', cloud: shaped, dx: CAT_HEAD.x, until: now + 1.8 });
-    for (let i = 0; i < 3; i++) hearts.push({ x: shaped.x + CAT_HEAD.x - 3 + Math.random() * 6, y: shaped.y * H, vy: -(5 + Math.random() * 4), life: 1 });
-    blip(1300); blip(950, 0.12); blip(1500, 0.3);
-    if (!spotted.has('cat')) { spotted.add('cat'); toast('you woke the cloud cat. it forgives you.', 'Let Sleeping Cats Lie', 'cloud'); }
+    // Startled: it leaps up with its back arched and tail puffed, hisses, then curls back up.
+    if (shaped.react && now < shaped.react.until) return; // already spooked
+    shaped.react = { start: now, until: now + 1.8 };
+    bubbles.push({ text: 'HSS!', cloud: shaped, dx: CAT_HEAD.x, until: now + 1.4 });
+    noise({ dur: 0.5, freq: 3600, type: 'highpass', gain: 0.06 });
+    blip(700); blip(1400, 0.05);
+    if (!spotted.has('cat')) { spotted.add('cat'); toast('you startled the cloud cat. it will forgive you. eventually.', 'Let Sleeping Cats Lie', 'cloud'); }
   } else if (sun && Math.hypot(x - sun.x, y - sun.y) <= sun.r + 3) {
     shadesUntil = Date.now() / 1000 + 8;
     blip(1500); blip(2000, 0.08);
