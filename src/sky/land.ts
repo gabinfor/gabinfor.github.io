@@ -86,7 +86,7 @@ export class Land {
     ];
     this.hills = HILLS.map((L) => Int16Array.from({ length: W }, (_, x) =>
       Math.round(H * (L.base - L.amp * (Math.sin(x * L.f + L.s) + 0.5 * Math.sin(x * L.f * 2.6 + L.s * 2) + 0.25 * (vnoise(x / 9, L.s) - 0.5))))));
-    this.cells.clear(); this.craters = [];
+    this.craters = [];
     this.updateDerived();
 
     const near = this.hills[2], cl = (x: number) => clamp(Math.round(x), 0, W - 1);
@@ -158,27 +158,8 @@ export class Land {
     this.key = ''; // re-render the layers
   }
 
-  // ---------- digging (Minecraft easter eggs) ----------
-  /** Mined 4px cells: key `${hill}:${x0}` -> how many blocks deep. Lasts until reload. */
-  cells = new Map<string, number>();
-  /** Scorched explosion craters. */
+  // ---------- craters (creeper easter egg) ----------
   private craters: { hill: number; x0: number; x1: number }[] = [];
-
-  /** Which hill (0 far .. 2 near) has its surface at or above y in column x, nearest first. */
-  hillAt(x: number, y: number) {
-    const cx = clamp(Math.round(x), 0, this.W - 1);
-    for (let i = 2; i >= 0; i--) if (y >= this.hills[i][cx] - 1) return i;
-    return -1;
-  }
-
-  /** Lower (dy > 0) or raise (dy < 0) one 4px cell of a hill's surface. */
-  digCell(hill: number, x0: number, dy: number) {
-    const ys = this.hills[hill];
-    for (let x = x0; x < x0 + 4 && x < this.W; x++) ys[x] = clamp(ys[x] + dy, 0, this.H - 2);
-    const key = `${hill}:${x0}`, depth = (this.cells.get(key) ?? 0) + Math.sign(dy);
-    if (depth > 0) this.cells.set(key, depth); else this.cells.delete(key);
-    this.updateDerived();
-  }
 
   /** A round crater: lowers the surface, blows away trees and tufts, scorches the ground. */
   crater(hill: number, cx: number, r: number, depth: number) {
@@ -343,17 +324,8 @@ export class Land {
     const rim = new Pixels(), rim1 = rgb(mix(col, [255, 255, 255], 0.16)), rim2 = rgb(mix(col, [255, 255, 255], 0.07));
     for (let x = 0; x < W; x++) { rim.add(rim1, x, ys[x]); rim.add(rim2, x, ys[x] + 1); }
     rim.flush(g);
-    // mined cells show dirt or stone; craters are scorched
+    // creeper craters are scorched
     const hill = layer - L_FAR, dug = new Pixels();
-    const dirt = rgb(sh(hex('#8a5a34'))), dirtD = rgb(sh(hex('#6e4526'))), stone = rgb(sh(hex('#8c8c8c'))), stoneD = rgb(sh(hex('#6b6b6b')));
-    const bedrock = rgb(sh(hex('#3a3a3a')));
-    for (const [key, d] of this.cells) {
-      const [h, x0] = key.split(':').map(Number);
-      if (h !== hill) continue;
-      const top = ys[clamp(x0, 0, W - 1)], [face, speck] = d >= 6 ? [bedrock, stoneD] : d >= 3 ? [stone, stoneD] : [dirt, dirtD];
-      dug.add(face, x0, top, 4, 4);
-      dug.add(speck, x0 + 1, top + 1, 1, 1); dug.add(speck, x0 + 3, top + 2, 1, 1); dug.add(speck, x0, top + 3, 1, 1);
-    }
     const scorch = rgb(sh(hex('#3b2f25'))), ash = rgb(sh(hex('#5a5048')));
     for (const c of this.craters) {
       if (c.hill !== hill) continue;

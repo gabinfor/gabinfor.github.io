@@ -20,8 +20,6 @@ declare global {
     'sky:lapse': CustomEvent<boolean>;
     'sky:cloud': CustomEvent<'cat' | 'dog'>;
     'mc:spawn': CustomEvent<'creeper' | 'zombie' | 'skeleton'>;
-    'mc:select': CustomEvent<'grass' | 'dirt' | 'stone'>;
-    'mc:inventory': CustomEvent<{ inventory: Record<'grass' | 'dirt' | 'stone', number>; selected: 'grass' | 'dirt' | 'stone' }>;
     'sky:bloom': Event;
   }
 }

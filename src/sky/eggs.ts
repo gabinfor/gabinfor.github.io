@@ -2,7 +2,6 @@
 //  - Konami code (↑↑↓↓←→←→BA): fireworks finale
 //  - Type (outside any text box): rain, snow, storm, fog, cloudy, clear, forecast, boom, cat, dog, night, day, now,
 //    minecraft (blocky mode), creeper, zombie, skeleton
-//  - Minecraft: hold the mouse on a hill to mine a block, right-click to place it back
 //  - Click the sun: shades. Click the night sky: fireworks. Click the day sky: birds.
 import { toast } from '../scripts/clicky';
 import type { IconName } from '../data/icons';

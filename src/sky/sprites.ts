@@ -138,17 +138,25 @@ export const GLYPHS: Record<string, string[]> = {
 };
 
 // ---------- Minecraft mobs (drawn facing right; mirrored when walking left) ----------
+// Front view, the way everyone pictures it: square head with the face, a tall mottled body, two feet.
 export const CREEPER = [
-  'GgGGgG',
-  'GKGGKG',
-  'gGKKGg',
-  'GKKKKG',
-  'GKggKG',
-  '.GgGG.',
-  '.gGGg.',
-  'GG..GG',
+  'GgGGHGgG',
+  'GHGgGGGH',
+  'GKKGgKKG',
+  'gKKGGKKG',
+  'GGHKKGgG',
+  'GgKKKKGG',
+  'GGKKKKHG',
+  'HGKGgKGG',
+  'GgGHGGgG',
+  'GGGgGHGG',
+  'HGgGGGgG',
+  'GGGGHgGG',
+  'gGH..GGg',
+  'GGG..GHG',
+  'gHG..GgG',
 ];
-export const CREEPER_PAL = { G: '#5bb84a', g: '#3f8f35', K: '#10200f' };
+export const CREEPER_PAL = { G: '#5fbf4f', g: '#3f9a3a', H: '#8fdc7a', K: '#1b1b1b' };
 
 export const ZOMBIE = [
   '.hhhh.',
@@ -173,12 +181,3 @@ export const SKELETON = [
   '.w.w..',
 ];
 export const SKELETON_PAL = { w: '#d4d4d4', k: '#2a2a2a', b: '#8a5a2b' };
-
-/** Destroy-stage cracks for a 4x4 block, cumulative (stage 1..5). */
-export const CRACKS: [number, number][][] = [
-  [[1, 1], [2, 2]],
-  [[0, 0], [3, 1]],
-  [[1, 3], [2, 0]],
-  [[0, 2], [3, 3], [3, 0]],
-  [[1, 2], [2, 1], [0, 3]],
-];

@@ -619,7 +619,7 @@ addEventListener('resize', () => { layout(); wake(); });
 if (perfOn) (window as unknown as { __skyShapes: unknown }).__skyShapes = () =>
   clouds.filter((c) => c.shape).map((c) => ({ shape: c.shape, x: (c.x + c.w / 2) * S, y: (c.y * H + c.h / 2) * S }));
 if (perfOn) (window as unknown as { __skyMobs: unknown }).__skyMobs = () =>
-  mc.mobs.map((m) => ({ kind: m.kind, state: m.state, x: (m.x + 3) * S, y: (land.hills[2][clamp(Math.round(m.x + 3), 0, W - 1)] - 4) * S }));
+  mc.mobs.map((m) => ({ kind: m.kind, state: m.state, ...mc.center(m, S) }));
 if (perfOn) (window as unknown as { __skyBench: unknown }).__skyBench = (frames = 60, step = 0) => {
   for (const k in perf) delete perf[k];
   let h = hourNow(performance.now());
@@ -654,14 +654,7 @@ addEventListener('sky:weather', (e) => {
 addEventListener('sky:fireworks', (e) => { fireworks.show(e.detail); wake(); });
 addEventListener('sky:bloom', wake);
 addEventListener('mc:spawn', (e) => { mc.spawn((e as CustomEvent<MobKind>).detail); wake(); });
-addEventListener('pointerup', () => mc.pointerUp());
-addEventListener('pointercancel', () => mc.pointerUp());
-// Right-click on the hills places a block, so keep the context menu out of the way there.
-addEventListener('contextmenu', (e) => {
-  const target = e.target instanceof Element ? e.target : null;
-  if (target && !target.closest('.window, a, button, input, textarea, select, label, .b88, .toast, .hotbar')
-    && land.hillAt(e.clientX / S, e.clientY / S) >= 0) e.preventDefault();
-});
+
 // Summon a shaped cloud somewhere in view (the "cat"/"dog" secret words).
 addEventListener('sky:cloud', (e) => {
   const c = clouds.filter((k) => !k.shape).sort((a, b) => a.th - b.th)[0];
@@ -677,9 +670,9 @@ let foundFireworks = false;
 const spotted = new Set<string>();
 addEventListener('pointerdown', (e) => {
   const target = e.target instanceof Element ? e.target : document.body;
-  if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast, .hotbar')) return;
+  if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast')) return;
   const x = e.clientX / S, y = e.clientY / S, h = hourNow(performance.now()), m = window.__skyMath(h);
-  if (mc.pointerDown(x, y, Date.now() / 1000, e.button)) { wake(); return; } // mobs, mining, placing
+  if (mc.pointerDown(x, y, Date.now() / 1000)) { wake(); return; } // clicked a mob
   const now = Date.now() / 1000;
   const shaped = clouds.find((c) => c.shape && smooth(c.th - 0.06, c.th + 0.06, weather.p.cover) > 0.5
     && x >= c.x && x <= c.x + c.w && y >= c.y * H - 4 && y <= c.y * H + c.h);

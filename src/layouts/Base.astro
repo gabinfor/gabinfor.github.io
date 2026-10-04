@@ -133,21 +133,6 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
         </Window>
       </div>
 
-      <!-- Minecraft hotbar: shows up once you've mined a block from the hills. -->
-      <div class="hotbar" hidden transition:persist="hotbar" role="group" aria-label="Inventory">
-        {(['grass', 'dirt', 'stone'] as const).map((item) => (
-          <button type="button" class="slot" data-item={item} aria-pressed="false" aria-label={item}>
-            <svg viewBox="0 0 4 4" width="24" height="24" shape-rendering="crispEdges" aria-hidden="true">
-              {item === 'grass' && <><rect width="4" height="4" fill="#8a5a34" /><rect width="4" height="1" fill="#5aa04a" /><rect y="1" width="1" height="1" fill="#5aa04a" /><rect x="3" y="1" width="1" height="1" fill="#5aa04a" /><rect x="2" y="3" width="1" height="1" fill="#6e4526" /></>}
-              {item === 'dirt' && <><rect width="4" height="4" fill="#8a5a34" /><rect x="1" y="1" width="1" height="1" fill="#6e4526" /><rect x="3" y="2" width="1" height="1" fill="#6e4526" /><rect y="3" width="1" height="1" fill="#9b6b43" /></>}
-              {item === 'stone' && <><rect width="4" height="4" fill="#8c8c8c" /><rect x="1" y="1" width="1" height="1" fill="#6b6b6b" /><rect x="3" y="2" width="1" height="1" fill="#6b6b6b" /><rect y="3" width="2" height="1" fill="#a0a0a0" /></>}
-            </svg>
-            <span class="count"></span>
-          </button>
-        ))}
-        {Array.from({ length: 6 }, () => <span class="slot" aria-hidden="true"></span>)}
-      </div>
-
       <footer class="foot">
         <div class="badges">
           <a class="b88-own" href="/" title={`${SITE.title}'s homepage`}><img src="/button.svg" width="88" height="31" alt={`${SITE.title}`} /></a>
@@ -187,22 +172,6 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
       addEventListener('skychange', (e) => { show(e.detail.h); weatherEl.textContent = e.detail.weather; });
       show(window.__skyOverride ?? window.__skyHour()); // don't wait for the first frame
       weatherEl.textContent = document.documentElement.dataset.weather ?? '…';
-      // Hotbar: counts and selection come from the sky (mc:inventory); clicking a slot selects it.
-      const hotbar = document.querySelector<HTMLElement>('.hotbar')!;
-      addEventListener('mc:inventory', ({ detail }) => {
-        for (const slot of hotbar.querySelectorAll<HTMLButtonElement>('[data-item]')) {
-          const item = slot.dataset.item as keyof typeof detail.inventory, n = detail.inventory[item];
-          slot.querySelector('.count')!.textContent = n ? String(n) : '';
-          slot.setAttribute('aria-pressed', String(item === detail.selected));
-          slot.style.opacity = n ? '1' : '0.35';
-        }
-        hotbar.hidden = false;
-      });
-      hotbar.addEventListener('click', (e) => {
-        const slot = (e.target as Element).closest<HTMLElement>('[data-item]');
-        if (slot) dispatchEvent(new CustomEvent('mc:select', { detail: slot.dataset.item }));
-      });
-
       const lapseBtn = document.getElementById('st-lapse')!;
       lapseBtn.addEventListener('click', () => dispatchEvent(new Event('sky:timelapse')));
       addEventListener('sky:lapse', (e) => lapseBtn.setAttribute('aria-pressed', String(e.detail)));
