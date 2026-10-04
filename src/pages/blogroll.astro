@@ -54,12 +54,17 @@ const snippet = `<a href="${SITE.url}"><img src="${SITE.url}/button.svg" width="
   textarea { flex: 1 1 260px; resize: none; }
 </style>
 <script>
-  const btn = document.getElementById('copy')!;
+  import { onPage } from '../scripts/page';
+
+  onPage((signal) => {
+  const btn = document.getElementById('copy');
+  if (!btn) return; // not the blogroll page
   btn.addEventListener('click', async () => {
     const ta = document.querySelector('.linkme textarea') as HTMLTextAreaElement;
     try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
     const [idle, done] = [btn.querySelector<HTMLElement>('.idle')!, btn.querySelector<HTMLElement>('.done')!];
     idle.hidden = true; done.hidden = false;
     setTimeout(() => { idle.hidden = false; done.hidden = true; }, 1500);
+  }, { signal });
   });
 </script>

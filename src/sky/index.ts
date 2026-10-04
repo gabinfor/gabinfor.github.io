@@ -1,7 +1,7 @@
 // The pixel sky: a low-res canvas behind the page, synced to the visitor's local
 // time, with weather, wildlife and fireworks. See Sky.astro for the controls.
 import { type RGB, NIGHT, Pixels, clamp, disc, dither, glow, hex, mix, rgb, rng, skyAt, smooth } from './palette';
-import { HOUSE_CHIMNEY, HOUSE_WINDOW } from './sprites';
+import { CLOUD_SHAPES, DOG_WAG, GLYPHS, HOUSE_CHIMNEY, HOUSE_WINDOW } from './sprites';
 import { L_FAR, L_FRONT, L_LAKE, L_MID, L_MOUNTAINS, L_NEAR, Land } from './land';
 import { type Weather, WeatherFx, forecast, isWeather } from './weather';
 import { Fireworks } from './fireworks';
@@ -22,7 +22,16 @@ let lights: { sun?: { x: number; y: number; r: number; c: RGB; vis: number }; mo
 let W = 1, H = 1;
 
 type Star = { x: number; y: number; b: number; tw: boolean; big: boolean; c: string };
-type Cloud = { x: number; y: number; speed: number; w: number; th: number; px: [number, number, number][]; runs: [number, number, number, number][] };
+type CloudLook = { w: number; h: number; px: [number, number, number][]; runs: [number, number, number, number][] };
+type ShapeName = keyof typeof CLOUD_SHAPES;
+type Cloud = CloudLook & {
+  x: number; y: number; speed: number; th: number; shape?: ShapeName; normal?: CloudLook;
+  /** Reaction to a click (cat hops, dog wags and zooms), as a wall-clock time window. */
+  react?: { start: number; until: number };
+};
+// Speech bubbles and floating hearts from clicked cloud animals.
+let bubbles: { text: string; cloud: Cloud; dx: number; until: number }[] = [];
+let hearts: { x: number; y: number; vy: number; life: number }[] = [];
 type Bird = { x: number; y: number; vx: number; vy: number; ph: number };
 
 let stars: Star[] = [];
@@ -59,7 +68,12 @@ function makeCloud(r: () => number, th: number, now: number): Cloud {
     const cx = Math.round(rad + 1 + r() * (w - 2 * rad - 2)), cy = h - baseH + 1 - Math.floor(r() * 2);
     for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) if (dx * dx + dy * dy <= rad * rad + 1) set(cx + dx, cy + dy);
   }
-  // Three tones: lit top edge, body, shaded underside (dithered into the base).
+  const span = W + 2 * w, speed = big ? 0.3 + r() * 0.5 : 0.5 + r() * 1.0;
+  return { ...shadeCloud(grid, w, h, baseH), x: ((r() * span + now * speed) % span) - w, y: big ? 0.04 + r() * 0.26 : 0.08 + r() * 0.32, speed, th };
+}
+
+/** Three tones: lit top edge, body, shaded underside (dithered into the base). */
+function shadeCloud(grid: Uint8Array, w: number, h: number, baseH: number): CloudLook {
   const px: Cloud['px'] = [], runs: Cloud['runs'] = [];
   for (let y = 0; y < h; y++) {
     let run: [number, number, number, number] | null = null;
@@ -75,8 +89,59 @@ function makeCloud(r: () => number, th: number, now: number): Cloud {
       if (run) run[2]++;
     }
   }
-  const span = W + 2 * w, speed = big ? 0.3 + r() * 0.5 : 0.5 + r() * 1.0;
-  return { x: ((r() * span + now * speed) % span) - w, y: big ? 0.04 + r() * 0.26 : 0.08 + r() * 0.32, speed, w, th, px, runs };
+  return { w, h, px, runs };
+}
+
+function shapeLook(name: ShapeName | 'dogWag'): CloudLook {
+  const rows = name === 'dogWag' ? DOG_WAG : CLOUD_SHAPES[name], w = rows[0].length, h = rows.length;
+  const grid = Uint8Array.from(rows.join(''), (c) => (c === '#' ? 1 : 0));
+  return shadeCloud(grid, w, h, 3);
+}
+
+/** Turn a cloud into a cat/dog (or back into its normal self). */
+function reshape(c: Cloud, name?: ShapeName) {
+  if (name) { c.normal ??= { w: c.w, h: c.h, px: c.px, runs: c.runs }; Object.assign(c, shapeLook(name), { shape: name }); }
+  else if (c.normal) { Object.assign(c, c.normal, { shape: undefined, normal: undefined }); }
+}
+const randomShape = (): ShapeName => (Math.random() < 0.5 ? 'cat' : 'dog');
+let dogLooks: [CloudLook, CloudLook] | null = null; // tail down / tail up
+
+/** Where a cloud is drawn this frame, including a cat's hop. */
+function cloudPos(c: Cloud, t: number) {
+  let dy = 0;
+  if (c.react && c.shape === 'cat' && t < c.react.until) dy = -Math.round(Math.abs(Math.sin((t - c.react.start) * 9)) * 3);
+  return { x: Math.floor(c.x), y: Math.round(c.y * H) + dy };
+}
+
+function pixelText(text: string, x: number, y: number, px: Pixels, color: string) {
+  for (const ch of text) {
+    const g = GLYPHS[ch];
+    if (!g) { x += 2; continue; }
+    g.forEach((row, gy) => [...row].forEach((c, gx) => c === '#' && px.add(color, x + gx, y + gy)));
+    x += g[0].length + 1;
+  }
+}
+
+function drawBubblesAndHearts(t: number, n: number) {
+  const px = new Pixels();
+  for (const b of bubbles) {
+    const w = [...b.text].reduce((a, ch) => a + (GLYPHS[ch]?.[0].length ?? 1) + 1, 0) + 3, h = 9;
+    const p = cloudPos(b.cloud, t); // follows its cloud (the dog runs off with it)
+    const x = Math.round(p.x + b.dx - w / 2), y = p.y - h - 3;
+    const edge = n > 0.5 ? '#9aa0c8' : '#30304a';
+    px.add(edge, x + 1, y, w - 2, 1); px.add(edge, x + 1, y + h - 1, w - 2, 1);
+    px.add(edge, x, y + 1, 1, h - 2); px.add(edge, x + w - 1, y + 1, 1, h - 2);
+    px.add('#ffffff', x + 1, y + 1, w - 2, h - 2);
+    px.add('#ffffff', x + 3, y + h - 1, 2, 1); px.add(edge, x + 3, y + h, 1, 2); px.add(edge, x + 4, y + h, 1, 1); // tail
+    pixelText(b.text, x + 2, y + 2, px, '#1b1b2f');
+  }
+  for (const k of hearts) {
+    if (dither(k.x | 0, k.y | 0) >= k.life) continue;
+    const x = Math.round(k.x), y = Math.round(k.y);
+    px.add('#ff7ad9', x, y, 1, 1); px.add('#ff7ad9', x + 2, y, 1, 1); px.add('#ff7ad9', x, y + 1, 3, 1); px.add('#ff7ad9', x + 1, y + 2, 1, 1);
+  }
+  px.flush(g);
+  bubbles = bubbles.filter((b) => t < b.until);
 }
 
 function layout() {
@@ -98,6 +163,7 @@ function layout() {
 
   const rc = rng(99), N = Math.max(8, Math.round(W / 22)), now = Date.now() / 1000;
   clouds = Array.from({ length: N }, (_, i) => makeCloud(rc, (i / N) * 0.95, now));
+  if (Math.random() < 0.1) reshape(clouds[Math.floor(Math.random() * 2)], randomShape()); // lucky visit
 
   land.layout(W, H);
   refl.width = W; refl.height = Math.max(1, land.lakeRows);
@@ -191,11 +257,15 @@ function drawMoon(m: SkyMath, horizon: number, R: number, cover: number, top: RG
   }
 }
 
-function drawClouds(cover: number, cols: string[]) {
+function drawClouds(cover: number, cols: string[], t: number) {
   for (const c of clouds) {
     const v = smooth(c.th - 0.06, c.th + 0.06, cover);
     if (v <= 0) continue;
-    const x0 = Math.floor(c.x), y0 = Math.round(c.y * H);
+    const { x: x0, y: y0 } = cloudPos(c, t);
+    if (c.shape === 'dog' && c.react && t < c.react.until) { // wag
+      dogLooks ??= [shapeLook('dog'), shapeLook('dogWag')];
+      Object.assign(c, dogLooks[Math.floor(t * 8) & 1]);
+    }
     const px = new Pixels(); // one fill per tone; tones within a cloud don't overlap
     if (v >= 1) for (const [x, y, len, tone] of c.runs) px.add(cols[tone], x0 + x, y0 + y, len, 1);
     else for (const [x, y, tone] of c.px) if (dither(x0 + x, y0 + y) < v) px.add(cols[tone], x0 + x, y0 + y);
@@ -355,7 +425,8 @@ function draw(h: number, t: number) {
 
   const gray = mix([150, 154, 168], [70, 72, 90], clamp((wx.gloom - 0.3) / 0.45));
   const hi = mix(mix(mix([255, 255, 255], bottom, 0.25), gray, wx.gloom * 0.85), [50, 54, 96], m.n * 0.85);
-  drawClouds(wx.cover, [rgb(hi), rgb(mix(hi, top, 0.18)), rgb(mix(hi, top, 0.42))]);
+  drawClouds(wx.cover, [rgb(hi), rgb(mix(hi, top, 0.18)), rgb(mix(hi, top, 0.42))], t);
+  drawBubblesAndHearts(t, m.n);
 
   fireworks.draw(g);
   drawCritters(top, t);
@@ -400,7 +471,19 @@ function update(dt: number, t: number, m: SkyMath) {
   weather.update(dt, t, [land.front, ...land.hills]);
   fireworks.update(dt, W, H, land.ground);
   const wind = weather.p.wind;
-  for (const c of clouds) { c.x += c.speed * wind * dt; if (c.x > W + c.w) c.x -= W + 2 * c.w; }
+  for (const k of hearts) { k.y += k.vy * dt; k.x += Math.sin(k.y * 0.5) * 0.15; k.life -= dt * 0.45; }
+  hearts = hearts.filter((k) => k.life > 0);
+  for (const c of clouds) {
+    const zoomies = c.shape === 'dog' && c.react && t < c.react.until ? 12 : 1;
+    c.x += c.speed * wind * dt * zoomies;
+    if (c.react && t >= c.react.until) c.react = undefined;
+    if (c.x > W + c.w) {
+      // Off the edge: shaped clouds go back to normal, and now and then a normal one comes back as a cat or dog.
+      if (c.shape) reshape(c);
+      else if (c.th < 0.3 && Math.random() < 0.15) reshape(c, randomShape());
+      c.x = -c.w;
+    }
+  }
 
   // birds: an occasional flock on fair days
   if ((nextFlock -= dt) <= 0) {
@@ -487,6 +570,9 @@ addEventListener('resize', () => { layout(); wake(); });
 
 // ?perf: window.__skyBench(frames, hoursPerFrame) runs frames synchronously (works even in a
 // hidden tab) and returns per-section timings; a non-zero hour step exercises landscape re-renders.
+// ?perf: where the shaped clouds are, in screen pixels (for testing their click reactions).
+if (perfOn) (window as unknown as { __skyShapes: unknown }).__skyShapes = () =>
+  clouds.filter((c) => c.shape).map((c) => ({ shape: c.shape, x: (c.x + c.w / 2) * S, y: (c.y * H + c.h / 2) * S }));
 if (perfOn) (window as unknown as { __skyBench: unknown }).__skyBench = (frames = 60, step = 0) => {
   for (const k in perf) delete perf[k];
   let h = hourNow(performance.now());
@@ -520,15 +606,37 @@ addEventListener('sky:weather', (e) => {
 });
 addEventListener('sky:fireworks', (e) => { fireworks.show(e.detail); wake(); });
 addEventListener('sky:bloom', wake);
+// Summon a shaped cloud somewhere in view (the "cat"/"dog" secret words).
+addEventListener('sky:cloud', (e) => {
+  const c = clouds.filter((k) => !k.shape).sort((a, b) => a.th - b.th)[0];
+  if (!c) return;
+  reshape(c, e.detail as ShapeName);
+  c.x = W * (0.15 + Math.random() * 0.45);
+  wake();
+});
 document.addEventListener('visibilitychange', () => { if (!document.hidden) lastSim = performance.now(); });
 
 // Clicking the empty sky: fireworks at night, startled birds by day, and the sun has a secret.
 let foundFireworks = false;
+const spotted = new Set<string>();
 addEventListener('pointerdown', (e) => {
   const target = e.target instanceof Element ? e.target : document.body;
   if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast')) return;
   const x = e.clientX / S, y = e.clientY / S, h = hourNow(performance.now()), m = window.__skyMath(h);
-  if (sun && Math.hypot(x - sun.x, y - sun.y) <= sun.r + 3) {
+  const now = Date.now() / 1000;
+  const shaped = clouds.find((c) => c.shape && smooth(c.th - 0.06, c.th + 0.06, weather.p.cover) > 0.5
+    && x >= c.x && x <= c.x + c.w && y >= c.y * H - 4 && y <= c.y * H + c.h);
+  if (shaped) {
+    const cat = shaped.shape === 'cat';
+    shaped.react = { start: now, until: now + (cat ? 1.2 : 2.5) };
+    // the head is top-left for the cat, top-right for the dog
+    bubbles.push({ text: cat ? 'MEOW' : 'WOOF!', cloud: shaped, dx: cat ? 5 : 16, until: now + 1.6 });
+    if (cat) {
+      for (let i = 0; i < 4; i++) hearts.push({ x: shaped.x + 3 + Math.random() * 8, y: shaped.y * H + 2, vy: -(5 + Math.random() * 4), life: 1 });
+      blip(1300); blip(950, 0.12); blip(1500, 0.3);
+    } else { blip(330); blip(260, 0.1); blip(330, 0.35); blip(260, 0.45); }
+    if (!spotted.has(shaped.shape!)) { spotted.add(shaped.shape!); toast(cat ? 'a cloud cat! it likes you.' : 'a cloud dog! zoomies!', 'you spotted a shape'); }
+  } else if (sun && Math.hypot(x - sun.x, y - sun.y) <= sun.r + 3) {
     shadesUntil = Date.now() / 1000 + 8;
     blip(1500); blip(2000, 0.08);
     toast('the sun is too cool for you now.', 'shades on');

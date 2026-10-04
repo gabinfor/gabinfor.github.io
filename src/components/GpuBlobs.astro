@@ -29,6 +29,8 @@ const { height = '420px', hue = 0, caption, pixel = 3 } = Astro.props;
 </style>
 
 <script>
+  import { onPage } from '../scripts/page';
+
   const SHADER = /* wgsl */ `
     struct U { res: vec2f, mouse: vec2f, time: f32, hue: f32, pad: vec2f };
     @group(0) @binding(0) var<uniform> u: U;
@@ -90,13 +92,14 @@ const { height = '420px', hue = 0, caption, pixel = 3 } = Astro.props;
     }
   `;
 
-  async function start(fig: HTMLElement) {
+  async function start(fig: HTMLElement, signal: AbortSignal) {
     const canvas = fig.querySelector('canvas')!;
     const fail = () => { fig.classList.add('no-gpu'); fig.querySelector<HTMLElement>('.fallback')!.hidden = false; };
     if (!('gpu' in navigator)) return fail();
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) return fail();
     const device = await adapter.requestDevice();
+    if (signal.aborted) return device.destroy();
     const ctx = canvas.getContext('webgpu');
     if (!ctx) return fail();
     const format = navigator.gpu.getPreferredCanvasFormat();
@@ -118,26 +121,30 @@ const { height = '420px', hue = 0, caption, pixel = 3 } = Astro.props;
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
     let visible = true, raf = 0;
 
-    new ResizeObserver(() => {
+    const ro = new ResizeObserver(() => {
       const scale = pixel === 1 ? Math.min(devicePixelRatio, 2) : 1 / pixel;
       canvas.width = Math.max(1, Math.round(canvas.clientWidth * scale));
       canvas.height = Math.max(1, Math.round(canvas.clientHeight * scale));
-    }).observe(canvas);
+    });
+    ro.observe(canvas);
     canvas.addEventListener('pointermove', (e) => {
       const r = canvas.getBoundingClientRect();
       mouse.tx = (e.clientX - r.left) / r.width;
       mouse.ty = (e.clientY - r.top) / r.height;
     });
     canvas.addEventListener('pointerleave', () => { mouse.tx = 0.5; mouse.ty = 0.5; });
-    new IntersectionObserver(([e]) => {
+    const io = new IntersectionObserver(([e]) => {
       visible = e.isIntersecting;
       if (visible && !raf) raf = requestAnimationFrame(frame);
-    }).observe(canvas);
+    });
+    io.observe(canvas);
+    // Leaving the page: stop the loop and free the GPU device.
+    signal.addEventListener('abort', () => { cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); device.destroy(); });
 
     const t0 = performance.now();
     function frame(now: number) {
       raf = 0;
-      if (!visible) return;
+      if (!visible || signal.aborted) return;
       mouse.x += (mouse.tx - mouse.x) * 0.08;
       mouse.y += (mouse.ty - mouse.y) * 0.08;
       data.set([canvas.width, canvas.height, mouse.x, mouse.y, still ? 2 : (now - t0) / 1000, hue]);
@@ -155,9 +162,11 @@ const { height = '420px', hue = 0, caption, pixel = 3 } = Astro.props;
     }
   }
 
-  document.querySelectorAll<HTMLElement>('figure.gpu').forEach((f) => start(f).catch((err) => {
-    console.error(err);
-    f.classList.add('no-gpu');
-    f.querySelector<HTMLElement>('.fallback')!.hidden = false;
-  }));
+  onPage((signal) => {
+    document.querySelectorAll<HTMLElement>('figure.gpu').forEach((f) => start(f, signal).catch((err) => {
+      console.error(err);
+      f.classList.add('no-gpu');
+      f.querySelector<HTMLElement>('.fallback')!.hidden = false;
+    }));
+  });
 </script>

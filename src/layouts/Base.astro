@@ -4,6 +4,8 @@ import { getCollection } from 'astro:content';
 import Sky from '../components/Sky.astro';
 import Window from '../components/Window.astro';
 import Badge88 from '../components/Badge88.astro';
+import Radio from '../components/Radio.astro';
+import { ClientRouter } from 'astro:transitions';
 import Icon from '../components/Icon.astro';
 import type { IconName } from '../data/icons';
 import { SITE } from '../data/site';
@@ -41,6 +43,8 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
     <link rel="blogroll" type="text/xml" href="/blogroll.opml" />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
+    <!-- Client-side navigation: the sky, status box and radio keep running between pages. -->
+    <ClientRouter fallback="none" />
     <link rel="preload" href="/fonts/monocraft-regular.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/monocraft-bold.woff2" as="font" type="font/woff2" crossorigin />
     <!-- Sky math lives here so the colour scheme is right before first paint. -->
@@ -78,7 +82,7 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
         <p class="sub">{SITE.tagline}</p>
       </header>
 
-      <div class="marquee window" aria-label="News ticker">
+      <div class="marquee window" aria-label="News ticker" transition:persist="ticker">
         <span>
           ★ welcome, traveller! ★ the sky up there matches the time where you are ★
           {latest && <>newest post: <a href={`/blog/${latest.id}/`}>{latest.data.title}</a> ★ </>}
@@ -101,7 +105,7 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
           <slot />
         </Window>
 
-        <Window title="status" icon="sun" class="status">
+        <Window title="status" icon="sun" class="status" persist="status">
           <dl class="stat">
             <dt>your time</dt><dd id="st-time">--:--</dd>
             <dt>sky</dt><dd id="st-sky">…</dd>
@@ -122,6 +126,9 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
               <span class="on"><Icon name="firework" /> bloom on</span><span class="off"><Icon name="firework" /> bloom off</span>
             </button>
           </div>
+        </Window>
+        <Window title="radio" icon="radio" class="radio-win" persist="radio">
+          <Radio />
         </Window>
       </div>
 
@@ -145,6 +152,13 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
 
     <script>
       import '../scripts/clicky';
+
+      // Navigation swaps the <html> attributes for the new page's. Carry over the ones the
+      // sky and the toggles set at runtime, so nothing flashes back to defaults.
+      document.addEventListener('astro:before-swap', (e) => {
+        const from = document.documentElement.dataset, to = e.newDocument.documentElement.dataset;
+        for (const k of ['phase', 'weather', 'bloom', 'glass'] as const) if (from[k]) to[k] = from[k];
+      });
 
       const pad = (n: number) => String(n).padStart(2, '0');
       const timeEl = document.getElementById('st-time')!, skyEl = document.getElementById('st-sky')!;
@@ -192,12 +206,13 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
   .layout {
     display: grid; gap: 16px; align-items: start;
     grid-template-columns: 190px minmax(0, 1fr);
-    grid-template-rows: auto auto 1fr;
-    grid-template-areas: 'nav main' 'status main' '. main';
+    grid-template-rows: auto auto auto 1fr;
+    grid-template-areas: 'nav main' 'status main' 'radio main' '. main';
   }
   .layout > :global(.nav) { grid-area: nav; }
   .layout > :global(.main) { grid-area: main; min-height: 60vh; }
   .layout > :global(.status) { grid-area: status; }
+  .layout > :global(.radio-win) { grid-area: radio; }
   .nav-btns { display: flex; flex-direction: column; gap: 6px; }
   .nav-btns .btn { justify-content: flex-start; }
 
@@ -208,7 +223,7 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
   .stat-btns .btn { font-size: 12px; padding: 6px 8px; }
 
   @media (max-width: 760px) {
-    .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'nav' 'main' 'status'; }
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: 'nav' 'main' 'radio' 'status'; }
     .nav-btns { flex-direction: row; flex-wrap: wrap; }
     .stat-btns { flex-direction: row; flex-wrap: wrap; }
   }

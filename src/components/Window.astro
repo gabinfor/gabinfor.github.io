@@ -1,10 +1,11 @@
 ---
 import Icon from './Icon.astro';
 import type { IconName } from '../data/icons';
-interface Props { title: string; icon?: IconName; class?: string; tag?: 'section' | 'main' | 'aside' }
-const { title, icon, class: className, tag: Tag = 'section' } = Astro.props;
+// `persist`: keep this window (and its state) alive across client-side page navigations.
+interface Props { title: string; icon?: IconName; class?: string; tag?: 'section' | 'main' | 'aside'; persist?: string }
+const { title, icon, class: className, tag: Tag = 'section', persist } = Astro.props;
 ---
-<Tag class:list={['window', className]}>
+<Tag class:list={['window', className]} data-astro-transition-persist={persist}>
   <div class="titlebar">
     <span class="tb-title">{icon && <Icon name={icon} size={14} />} {title}</span>
     <span class="tb-btns">

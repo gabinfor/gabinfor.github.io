@@ -1,0 +1,172 @@
+---
+// A tiny web radio. Lives in a persisted window, so it keeps playing while you browse.
+import Icon from './Icon.astro';
+import { STATIONS } from '../data/radio';
+---
+<div class="radio" data-radio>
+  <div class="lcd">
+    <canvas class="viz" width="40" height="10" aria-hidden="true"></canvas>
+    <div class="screen" aria-live="polite">
+      <div class="st-name"><span>{STATIONS[0].name}</span></div>
+      <div class="st-meta"><span class="state">off</span> · <span class="genre">{STATIONS[0].genre}</span></div>
+    </div>
+  </div>
+  <div class="presets" role="group" aria-label="Stations">
+    {STATIONS.map((s, i) => (
+      <button type="button" class="btn preset" data-station={s.id} aria-pressed={i === 0 ? 'true' : 'false'} title={s.name}>{s.label}</button>
+    ))}
+  </div>
+  <div class="controls">
+    <button type="button" class="btn" data-radio-play aria-pressed="false">
+      <span class="on"><Icon name="stop" /> stop</span><span class="off"><Icon name="play" /> play</span>
+    </button>
+    <input type="range" min="0" max="1" step="0.05" value="0.6" aria-label="Volume" data-radio-vol />
+  </div>
+  <a class="credit" href={STATIONS[0].home} target="_blank" rel="noopener">via {STATIONS[0].via}</a>
+</div>
+
+<style>
+  .radio { display: flex; flex-direction: column; gap: 8px; }
+  .lcd {
+    display: flex; flex-direction: column; gap: 4px; padding: 6px;
+    background: #10220f; color: #7dff8a; border: 2px solid var(--border);
+    box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.5); text-shadow: 0 0 6px rgb(125 255 138 / 0.5);
+    font: 600 11px/1.3 var(--pixel);
+  }
+  .viz { width: 100%; height: 25px; image-rendering: pixelated; }
+  .st-name { overflow: hidden; white-space: nowrap; }
+  .st-name span { display: inline-block; }
+  .radio.playing .st-name span { padding-left: 100%; animation: scroll 9s linear infinite; }
+  @keyframes scroll { to { transform: translateX(-100%); } }
+  @media (prefers-reduced-motion: reduce) { .radio.playing .st-name span { padding-left: 0; } }
+  .st-meta { color: #4fbf5c; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .radio.playing .state { animation: blink 1.2s steps(1) infinite; }
+  .presets { display: flex; gap: 4px; }
+  .preset { flex: 1; font-size: 11px; padding: 5px 2px; }
+  .controls { display: flex; gap: 6px; align-items: center; }
+  .controls .btn { font-size: 12px; padding: 6px 8px; flex: none; }
+  .controls input { flex: 1; min-width: 0; }
+  .credit { font-size: 11px; color: var(--win-muted); }
+</style>
+
+<script>
+  import { STATIONS, type Station } from '../data/radio';
+
+  const store = {
+    get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
+    set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} },
+  };
+  const root = document.querySelector<HTMLElement>('[data-radio]')!;
+  const $ = <T extends Element>(s: string) => root.querySelector<T>(s)!;
+  const playBtn = $<HTMLButtonElement>('[data-radio-play]'), vol = $<HTMLInputElement>('[data-radio-vol]');
+  const viz = $<HTMLCanvasElement>('.viz'), vg = viz.getContext('2d')!;
+
+  let station: Station = STATIONS.find((s) => s.id === store.get('radio-station')) ?? STATIONS[0];
+  vol.value = store.get('radio-vol') ?? '0.6';
+  let audio: HTMLAudioElement | null = null;
+  let actx: AudioContext | undefined, analyser: AnalyserNode | null = null, source: MediaElementAudioSourceNode | null = null;
+  let raf = 0;
+
+  function show(state: string) {
+    $('.st-name span').textContent = station.name;
+    $('.genre').textContent = station.genre;
+    $('.state').textContent = state;
+    const credit = $<HTMLAnchorElement>('.credit');
+    credit.href = station.home; credit.textContent = `via ${station.via}`;
+    root.querySelectorAll<HTMLButtonElement>('[data-station]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.station === station.id)));
+    const on = !!audio;
+    playBtn.setAttribute('aria-pressed', String(on));
+    root.classList.toggle('playing', on && state === 'live');
+  }
+
+  function start(withAnalyser = true) {
+    stop(false);
+    const a = new Audio();
+    audio = a;
+    // CORS mode lets us read the audio for the spectrum; if a station ever drops its CORS
+    // headers, playback would fail, so we retry once without it (no spectrum, still music).
+    if (withAnalyser) a.crossOrigin = 'anonymous';
+    a.preload = 'none';
+    a.volume = Number(vol.value);
+    a.src = station.url;
+    a.addEventListener('playing', () => audio === a && show('live'));
+    a.addEventListener('waiting', () => audio === a && show('buffering…'));
+    a.addEventListener('error', () => {
+      if (audio !== a) return;
+      if (withAnalyser) start(false);
+      else { stop(false); show('offline, try another'); }
+    });
+    if (withAnalyser) {
+      try {
+        actx ??= new AudioContext();
+        actx.resume();
+        analyser ??= Object.assign(actx.createAnalyser(), { fftSize: 128, smoothingTimeConstant: 0.75 });
+        source = actx.createMediaElementSource(a);
+        source.connect(analyser).connect(actx.destination);
+      } catch { /* no Web Audio: plays without the spectrum */ }
+    }
+    a.play().catch(() => { if (audio === a) { stop(false); show('press play'); } });
+    show('tuning…');
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: station.name, artist: station.genre, album: 'gabinfor radio' });
+      navigator.mediaSession.setActionHandler('pause', () => { stop(); });
+      navigator.mediaSession.setActionHandler('play', () => start());
+    }
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(draw);
+  }
+
+  function stop(update = true) {
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute('src'); // drop the connection, or the stream keeps downloading
+      audio.load();
+      audio = null;
+    }
+    source?.disconnect();
+    source = null;
+    if (update) show('off');
+  }
+
+  // A chunky green/yellow/red spectrum, ~20 fps.
+  const bins = new Uint8Array(64), peaks = new Float32Array(10);
+  let lastDraw = 0;
+  function draw(now: number) {
+    raf = audio ? requestAnimationFrame(draw) : 0;
+    if (now - lastDraw < 50) return;
+    lastDraw = now;
+    vg.clearRect(0, 0, 40, 10);
+    const live = audio && analyser && source;
+    if (live) analyser!.getByteFrequencyData(bins);
+    for (let b = 0; b < 10; b++) {
+      // roughly logarithmic bands
+      const lo = Math.floor(1.6 ** b) - 1, hi = Math.max(lo + 1, Math.floor(1.6 ** (b + 1)) - 1);
+      let v = 0;
+      if (live) { for (let i = lo; i < hi && i < 64; i++) v = Math.max(v, bins[i]); }
+      else if (audio) v = 40 + 30 * Math.sin(now / 300 + b); // no spectrum available: gentle idle wave
+      const h = Math.round((v / 255) * 10);
+      peaks[b] = Math.max(h, peaks[b] - 0.35);
+      for (let y = 0; y < h; y++) {
+        vg.fillStyle = y >= 8 ? '#ff5a4a' : y >= 6 ? '#ffd84a' : '#7dff8a';
+        vg.fillRect(b * 4, 9 - y, 3, 1);
+      }
+      if (peaks[b] >= 1) { vg.fillStyle = '#d8ffd8'; vg.fillRect(b * 4, 9 - Math.round(peaks[b]), 3, 1); }
+    }
+    if (!audio) { vg.fillStyle = '#2f6a35'; vg.fillRect(0, 9, 40, 1); }
+  }
+
+  root.addEventListener('click', (e) => {
+    const el = e.target as Element;
+    const preset = el.closest<HTMLButtonElement>('[data-station]');
+    if (preset) {
+      station = STATIONS.find((s) => s.id === preset.dataset.station) ?? station;
+      store.set('radio-station', station.id);
+      if (audio) start(); else show('off');
+    }
+    if (el.closest('[data-radio-play]')) audio ? stop() : start();
+  });
+  vol.addEventListener('input', () => { if (audio) audio.volume = Number(vol.value); store.set('radio-vol', vol.value); });
+
+  show('off');
+  draw(performance.now());
+</script>

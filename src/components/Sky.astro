@@ -2,7 +2,7 @@
 // Full-page pixel-art sky synced to the visitor's local time, with weather and fireworks.
 // Preview with ?hour=21.5 and/or ?weather=storm. The engine lives in src/sky/.
 ---
-<div class="sky" aria-hidden="true"><canvas class="base"></canvas><canvas class="bloom"></canvas></div>
+<div class="sky" aria-hidden="true" transition:persist="sky"><canvas class="base"></canvas><canvas class="bloom"></canvas></div>
 
 <style>
   .sky { position: fixed; inset: 0; z-index: -1; overflow: hidden; }

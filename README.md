@@ -32,6 +32,7 @@ npm run dev
 - `src/data/blogroll.ts`: blogs I follow (feeds are fetched at build time)
 - `src/data/site.ts`: name, tagline, links
 - `src/sky/`: the pixel sky engine: time of day, weather, sprites, fireworks, secrets. Preview with `?hour=21` and/or `?weather=storm` (clear, cloudy, rain, storm, snow, fog).
+- `src/data/radio.ts`: the radio stations (music-only HTTPS streams)
 - `src/scripts/clicky.ts`: click sounds, sparkles, toasts, and the window buttons
 - `scripts/make-cursors.mjs`: regenerates the pixel cursors in `public/cursors/`
 - `src/components/GpuBlobs.astro`: the WebGPU demo, usable in any `.mdx` post
@@ -42,5 +43,6 @@ npm run dev
 
 - Click the night sky for fireworks, the day sky to startle birds, and the sun for… see for yourself.
 - Konami code (↑↑↓↓←→←→BA) starts a fireworks finale.
-- Type anywhere outside a text box: `rain`, `snow`, `storm`, `fog`, `cloudy`, `clear`, `forecast`, `boom`, `night`, `day`, `now`.
+- Type anywhere outside a text box: `rain`, `snow`, `storm`, `fog`, `cloudy`, `clear`, `forecast`, `boom`, `cat`, `dog`, `night`, `day`, `now`.
+- Now and then a cloud drifts in shaped like a cat or a dog. Click it.
 - Automatic: fireworks just after midnight on New Year's Day, snow on Dec 24 to 26, an orange moon on Halloween. The moon shows its real phase.

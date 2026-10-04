@@ -1,6 +1,6 @@
 // Secrets. Spoilers below!
 //  - Konami code (↑↑↓↓←→←→BA): fireworks finale
-//  - Type (outside any text box): rain, snow, storm, fog, cloudy, clear, forecast, boom, night, day, now
+//  - Type (outside any text box): rain, snow, storm, fog, cloudy, clear, forecast, boom, cat, dog, night, day, now
 //  - Click the sun: shades. Click the night sky: fireworks. Click the day sky: birds.
 import { toast } from '../scripts/clicky';
 import type { Weather } from './forecast';
@@ -17,6 +17,8 @@ const WORDS: Record<string, [() => void, string]> = {
   clear: [() => setWeather('clear'), 'clear skies ahead.'],
   forecast: [() => setWeather(null), 'back to the real forecast.'],
   boom: [() => fire('sky:fireworks', 8), 'boom!'],
+  cat: [() => fire('sky:cloud', 'cat'), 'look up: a cloud cat.'],
+  dog: [() => fire('sky:cloud', 'dog'), 'look up: a cloud dog.'],
   night: [() => fire('sky:set', 23), 'goodnight.'],
   day: [() => fire('sky:set', 12.5), 'good morning!'],
   now: [() => fire('sky:set', null), 'back to your local time.'],

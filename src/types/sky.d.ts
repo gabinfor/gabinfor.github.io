@@ -18,6 +18,7 @@ declare global {
     'sky:fireworks': CustomEvent<number>;
     'sky:timelapse': Event;
     'sky:lapse': CustomEvent<boolean>;
+    'sky:cloud': CustomEvent<'cat' | 'dog'>;
     'sky:bloom': Event;
   }
 }

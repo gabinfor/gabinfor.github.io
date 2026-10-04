@@ -66,34 +66,40 @@ const weatherIcon: Record<(typeof WEATHERS)[number], IconName> = {
 </style>
 
 <script>
-  const input = document.getElementById('hour') as HTMLInputElement;
-  const out = document.getElementById('hour-out')!;
-  const fmt = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
-  const send = (type: string, detail: unknown) => dispatchEvent(new CustomEvent(type, { detail }));
+  import { onPage } from '../scripts/page';
 
-  let dragging = false;
-  const h0 = window.__skyOverride ?? window.__skyHour();
-  input.value = String(h0);
-  out.textContent = fmt(h0);
+  onPage((signal) => {
+    const input = document.getElementById('hour') as HTMLInputElement | null;
+    if (!input) return; // not the Lab
+    const out = document.getElementById('hour-out')!;
+    const fmt = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+    const send = (type: string, detail: unknown) => dispatchEvent(new CustomEvent(type, { detail }));
+    const on = { signal };
 
-  const weatherBtns = document.querySelectorAll<HTMLButtonElement>('[data-weather]');
-  let chosen: string | null = null;
-  const syncWeather = () => weatherBtns.forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.weather || null) === chosen && chosen !== null)));
+    let dragging = false;
+    const h0 = window.__skyOverride ?? window.__skyHour();
+    input.value = String(h0);
+    out.textContent = fmt(h0);
 
-  addEventListener('skychange', (e) => {
-    if (chosen !== null && chosen !== e.detail.weather) { chosen = e.detail.weather; syncWeather(); } // changed elsewhere (e.g. a secret word)
-    if (!dragging) input.value = String(e.detail.h);
-    out.textContent = fmt(e.detail.h);
+    const weatherBtns = document.querySelectorAll<HTMLButtonElement>('[data-weather]');
+    let chosen: string | null = null;
+    const syncWeather = () => weatherBtns.forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.weather || null) === chosen && chosen !== null)));
+
+    addEventListener('skychange', (e) => {
+      if (chosen !== null && chosen !== e.detail.weather) { chosen = e.detail.weather; syncWeather(); } // changed elsewhere (e.g. a secret word)
+      if (!dragging) input.value = String(e.detail.h);
+      out.textContent = fmt(e.detail.h);
+    }, on);
+    input.addEventListener('input', () => { dragging = true; send('sky:set', Number(input.value)); }, on);
+    input.addEventListener('change', () => (dragging = false), on);
+    document.getElementById('hour-reset')!.addEventListener('click', () => send('sky:set', null), on);
+
+    weatherBtns.forEach((b) => b.addEventListener('click', () => {
+      chosen = b.dataset.weather || null;
+      send('sky:weather', chosen);
+      syncWeather();
+    }, on));
+    document.getElementById('fw')!.addEventListener('click', () => send('sky:fireworks', 6), on);
+    document.getElementById('night')!.addEventListener('click', () => send('sky:set', 22.5), on);
   });
-  input.addEventListener('input', () => { dragging = true; send('sky:set', Number(input.value)); });
-  input.addEventListener('change', () => (dragging = false));
-  document.getElementById('hour-reset')!.addEventListener('click', () => send('sky:set', null));
-
-  weatherBtns.forEach((b) => b.addEventListener('click', () => {
-    chosen = b.dataset.weather || null;
-    send('sky:weather', chosen);
-    syncWeather();
-  }));
-  document.getElementById('fw')!.addEventListener('click', () => send('sky:fireworks', 6));
-  document.getElementById('night')!.addEventListener('click', () => send('sky:set', 22.5));
 </script>
