@@ -1,15 +1,16 @@
 import { type RGB, dither, hex, mix, rgb } from './palette';
 
 // Hand-placed pixel sprites. Each char maps to a palette entry; space = transparent.
+// No outline, like the other sprites: the roof is shaded instead, lit from the upper left.
 export const HOUSE = [
   '         CC  ',
-  '      o  CC  ',
-  '     oRo CC  ',
-  '    oRRRoCC  ',
-  '   oRRRRRo   ',
-  '  oRRRRRRRo  ',
-  ' oRRRRRRRRRo ',
-  'orrrrrrrrrrro',
+  '      h  CC  ',
+  '     hRr CC  ',
+  '    hRRRrCC  ',
+  '   hRRRRRr   ',
+  '  hRRRRRRRr  ',
+  ' hRRRRRRRRRr ',
+  'rrrrrrrrrrrrr',
   ' WWWWWWWWWWW ',
   ' WGGGWWWWDDW ',
   ' WGGGWWWWDDW ',
@@ -17,7 +18,7 @@ export const HOUSE = [
   ' wwwwwwwwDDw ',
 ];
 export const HOUSE_PAL = {
-  o: '#3a2418', R: '#c0462f', r: '#8a2f22', C: '#8a5a44', W: '#efe2c4',
+  h: '#e2704f', R: '#c0462f', r: '#8a2f22', C: '#8a5a44', W: '#efe2c4',
   w: '#c9b48f', D: '#6b4226', k: '#e8c86a', G: '#6f8fbf',
 };
 /** Where the window glass and chimney top are, relative to the sprite. */
