@@ -29,6 +29,7 @@ let clouds: Cloud[] = [];
 let mountains = new Int16Array(1);
 let mountainShadow = new Int16Array(1); // per column: pixels below this row are in shadow
 let hills: Int16Array[] = [];
+let skyline = new Int16Array(1); // top of all terrain (mountains included) per column
 let ground = new Int16Array(1); // highest surface per column (rockets launch from it, birds stay above it)
 let pines: number[] = [];
 let tufts: [number, number, string][] = [];
@@ -116,6 +117,7 @@ function layout() {
   hills = HILLS.map((L) => Int16Array.from({ length: W }, (_, x) =>
     Math.round(H * (L.base - (L.amp * (Math.sin(x * L.f1 + L.ph) + 0.5 * Math.sin(x * L.f2 + L.ph * 2))) / 1.5))));
   ground = Int16Array.from({ length: W }, (_, x) => Math.min(...hills.map((h) => h[x])));
+  skyline = Int16Array.from({ length: W }, (_, x) => Math.min(mountains[x], ground[x]));
 
   const near = hills[2], maxIn = (a: Int16Array, x0: number, w: number) => Math.max(...Array.from({ length: w }, (_, i) => a[clamp(x0 + i, 0, W - 1)]));
   house = { x: Math.round(W * 0.8), y: 0 };
@@ -336,6 +338,12 @@ function drawBloom(m: SkyMath, t: number) {
   }
   fireworks.draw(bg);
   drawMeteors(bg);
+  // Sky lights are behind the terrain: punch out its silhouette so nothing glows through a mountain.
+  bg.globalCompositeOperation = 'destination-out';
+  bg.fillStyle = '#000';
+  for (let x = 0; x < W; x++) bg.fillRect(x, skyline[x], 1, H - skyline[x]);
+  bg.globalCompositeOperation = 'source-over';
+  // Lights in front of (or on) the terrain.
   drawFireflies(bg, m, t);
   if (m.n > 0.5) {
     const { x, y, w, h } = HOUSE_WINDOW;
@@ -505,7 +513,9 @@ addEventListener('pointerdown', (e) => {
     blip(1500); blip(2000, 0.08);
     toast('the sun is too cool for you now.', 'shades on');
   } else if (m.n > 0.5) {
-    fireworks.launch(W, H, ground, x, y);
+    // Always burst above the skyline, or a low click would explode out of sight behind a mountain.
+    const top = Math.min(...Array.from({ length: 21 }, (_, i) => skyline[clamp((x | 0) + i - 10, 0, W - 1)]));
+    fireworks.launch(W, H, ground, x, Math.min(y, top - 10));
     if (!foundFireworks) { foundFireworks = true; toast('you lit up the night sky. click again!'); }
   } else if (y < ground[clamp(x | 0, 0, W - 1)]) {
     for (let k = 0; k < 5; k++) {
