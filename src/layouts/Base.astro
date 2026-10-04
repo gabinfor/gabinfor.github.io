@@ -109,7 +109,9 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
             <dt>visits</dt><dd id="st-visits">1st</dd>
           </dl>
           <div class="stat-btns">
-            <button type="button" class="btn" id="st-lapse"><Icon name="ffwd" />time-lapse</button>
+            <button type="button" class="btn" id="st-lapse" aria-pressed="false">
+              <span class="on"><Icon name="stop" /> stop</span><span class="off"><Icon name="ffwd" /> time-lapse</span>
+            </button>
             <button type="button" class="btn" data-sound aria-pressed="true">
               <span class="on"><Icon name="soundOn" /> sound on</span><span class="off"><Icon name="soundOff" /> sound off</span>
             </button>
@@ -155,7 +157,9 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
       addEventListener('skychange', (e) => { show(e.detail.h); weatherEl.textContent = e.detail.weather; });
       show(window.__skyOverride ?? window.__skyHour()); // don't wait for the first frame
       weatherEl.textContent = document.documentElement.dataset.weather ?? '…';
-      document.getElementById('st-lapse')!.addEventListener('click', () => dispatchEvent(new Event('sky:timelapse')));
+      const lapseBtn = document.getElementById('st-lapse')!;
+      lapseBtn.addEventListener('click', () => dispatchEvent(new Event('sky:timelapse')));
+      addEventListener('sky:lapse', (e) => lapseBtn.setAttribute('aria-pressed', String(e.detail)));
 
       // A personal visit counter, kept only in this browser.
       try {

@@ -438,7 +438,7 @@ function hourNow(now: number) {
   if (lapse) {
     const k = (now - lapse.start) / 1000; // one sky-hour per second
     if (k < 24) return (lapse.from + k) % 24;
-    lapse = null;
+    setLapse(null); // a full day has played; back to real time
   }
   return manualHour ?? window.__skyHour();
 }
@@ -498,8 +498,19 @@ if (perfOn) (window as unknown as { __skyBench: unknown }).__skyBench = (frames 
   const all = Object.values(perf).reduce((a, v) => a + v.total, 0);
   return { W, H, S, frameAvgMs: +(all / frames).toFixed(2), ...(window as unknown as { __skyPerf: () => object }).__skyPerf() };
 };
-addEventListener('sky:set', (e) => { manualHour = e.detail; lapse = null; wake(); });
-addEventListener('sky:timelapse', () => { lapse = { start: performance.now(), from: hourNow(performance.now()) }; wake(); });
+/** Start/stop the time-lapse and tell the UI (the status button shows it as pressed). */
+function setLapse(next: typeof lapse) {
+  const was = !!lapse;
+  lapse = next;
+  if (was !== !!next) dispatchEvent(new CustomEvent('sky:lapse', { detail: !!next }));
+}
+
+addEventListener('sky:set', (e) => { manualHour = e.detail; setLapse(null); wake(); });
+// Toggle: a second click stops it instead of starting another full day.
+addEventListener('sky:timelapse', () => {
+  setLapse(lapse ? null : { start: performance.now(), from: hourNow(performance.now()) });
+  wake();
+});
 addEventListener('sky:weather', (e) => {
   manualWeather = e.detail;
   weather.name = e.detail ?? forecast();
