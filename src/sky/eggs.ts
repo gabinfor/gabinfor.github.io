@@ -1,6 +1,6 @@
 // Secrets. Spoilers below!
 //  - Konami code (↑↑↓↓←→←→BA): fireworks finale
-//  - Type (outside any text box): rain, snow, storm, fog, cloudy, clear, forecast, boom, cat, dog, night, day, now,
+//  - Type (outside any text box): rain, snow, storm, fog, cloudy, clear, forecast, boom, cat, night, day, now,
 //    minecraft (blocky mode), creeper, zombie, skeleton
 //  - Click the sun: shades. Click the night sky: fireworks. Click the day sky: birds.
 import { toast } from '../scripts/clicky';
@@ -26,8 +26,7 @@ const WORDS: Record<string, [() => void, string, IconName?]> = {
   clear: [() => setWeather('clear'), 'clear skies ahead.'],
   forecast: [() => setWeather(null), 'back to the real forecast.'],
   boom: [() => fire('sky:fireworks', 8), 'boom!'],
-  cat: [() => fire('sky:cloud', 'cat'), 'look up: a cloud cat.', 'cloud'],
-  dog: [() => fire('sky:cloud', 'dog'), 'look up: a cloud dog.', 'cloud'],
+  cat: [() => fire('sky:cloud', 'cat'), 'look up: a cloud cat, fast asleep.', 'cloud'],
   minecraft: [() => toast(toggleBlocky() ? 'blocky clouds, a square sun, clicks that place blocks.' : 'back to normal.', 'Blocky Mode', 'block'), ''],
   creeper: [() => fire('mc:spawn', 'creeper'), 'something is on the hill. ssss...', 'creeper'],
   zombie: [() => fire('mc:spawn', 'zombie'), 'a zombie shambles onto the hill.', 'sword'],

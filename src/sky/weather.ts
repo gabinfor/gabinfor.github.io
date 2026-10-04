@@ -164,12 +164,11 @@ export class WeatherFx {
     }
   }
 
-  drawLightning(g: CanvasRenderingContext2D) {
-    this.drawBolt(g);
-    if (this.flash > 0) {
-      g.fillStyle = `rgba(235,235,255,${this.flash * 0.45})`;
-      g.fillRect(0, 0, this.W, this.H);
-    }
+  /** The whole-screen flash of a lightning strike (drawn in screen space). */
+  drawFlash(g: CanvasRenderingContext2D) {
+    if (this.flash <= 0) return;
+    g.fillStyle = `rgba(235,235,255,${this.flash * 0.45})`;
+    g.fillRect(0, 0, this.W, this.H);
   }
 
   drawBolt(g: CanvasRenderingContext2D) {

@@ -215,6 +215,12 @@ textarea, input[type='text'] {
 @keyframes toast-in { from { transform: translateX(120%); } }
 @keyframes toast-out { to { transform: translateX(120%); } }
 
+/* ---------- looking up at the sky ---------- */
+html.skyview .page { pointer-events: none; }
+.look-down { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 850; display: none; }
+html.skyview .look-down { display: inline-flex; }
+.look-down:active { transform: translate(calc(-50% + 1px), 1px); }
+
 /* ---------- screen shake (creeper explosion) ---------- */
 html.quake .page, html.quake .sky { animation: quake 0.12s steps(2) infinite; }
 @keyframes quake { 0% { transform: translate(3px, -2px); } 50% { transform: translate(-3px, 2px); } }

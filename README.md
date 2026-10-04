@@ -41,9 +41,11 @@ npm run dev
 
 ## Secrets (spoilers!)
 
+- At the very top of a page, keep scrolling up: the camera tilts up into the sky (the Milky Way at night, tall clouds by day). Scroll down, press Esc, or use "back to earth" to return.
+
 - Click the night sky for fireworks, the day sky to startle birds, and the sun for… see for yourself.
 - Konami code (↑↑↓↓←→←→BA) starts a fireworks finale.
-- Type anywhere outside a text box: `rain`, `snow`, `storm`, `fog`, `cloudy`, `clear`, `forecast`, `boom`, `cat`, `dog`, `night`, `day`, `now`, `minecraft` (blocky mode), `creeper`, `zombie`, `skeleton`.
-- Now and then a cloud drifts in shaped like a cat or a dog. Click it.
+- Type anywhere outside a text box: `rain`, `snow`, `storm`, `fog`, `cloudy`, `clear`, `forecast`, `boom`, `cat`, `night`, `day`, `now`, `minecraft` (blocky mode), `creeper`, `zombie`, `skeleton`.
+- Now and then a cloud drifts in shaped like a sleeping cat. Click it to wake it up (briefly).
 - Minecraft: a rare creeper walks the hill (click it, then step back). Zombies and skeletons wander at night: hit them three times, or wait for sunrise.
 - Automatic: fireworks just after midnight on New Year's Day, snow on Dec 24 to 26, an orange moon on Halloween. The moon shows its real phase.

@@ -87,7 +87,7 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
         <span>
           ★ welcome, traveller! ★ the sky up there matches the time where you are ★
           {latest && <>newest post: <a href={`/blog/${latest.id}/`}>{latest.data.title}</a> ★ </>}
-          click things, they make noises ★ psst… try clicking the night sky ★
+          click things, they make noises ★ at the top of the page, scroll up to look at the sky ★ psst… try clicking the night sky ★
         </span>
       </div>
 
@@ -151,6 +151,10 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
       </footer>
     </div>
 
+    <!-- Shown while looking up at the sky (scroll up at the top of the page). Outside .page,
+         which slides away during the pan. -->
+    <button type="button" class="btn look-down" transition:persist="lookdown"><Icon name="down" /> back to earth</button>
+
     <script>
       import '../scripts/clicky';
 
@@ -172,6 +176,8 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
       addEventListener('skychange', (e) => { show(e.detail.h); weatherEl.textContent = e.detail.weather; });
       show(window.__skyOverride ?? window.__skyHour()); // don't wait for the first frame
       weatherEl.textContent = document.documentElement.dataset.weather ?? '…';
+      document.querySelector('.look-down')!.addEventListener('click', () => dispatchEvent(new CustomEvent('sky:look', { detail: 0 })));
+
       const lapseBtn = document.getElementById('st-lapse')!;
       lapseBtn.addEventListener('click', () => dispatchEvent(new Event('sky:timelapse')));
       addEventListener('sky:lapse', (e) => lapseBtn.setAttribute('aria-pressed', String(e.detail)));
