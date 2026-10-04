@@ -139,23 +139,16 @@ export const GLYPHS: Record<string, string[]> = {
 };
 
 // ---------- Minecraft mobs (drawn facing right; mirrored when walking left) ----------
-// Front view, the way everyone pictures it: square head with the face, a tall mottled body, two feet.
+// Front view, zombie-sized: square head with the face (eyes, nose, mouth with fangs), mottled body, feet.
 export const CREEPER = [
-  'GgGGHGgG',
-  'GHGgGGGH',
-  'GKKGgKKG',
-  'gKKGGKKG',
-  'GGHKKGgG',
-  'GgKKKKGG',
-  'GGKKKKHG',
-  'HGKGgKGG',
-  'GgGHGGgG',
-  'GGGgGHGG',
-  'HGgGGGgG',
-  'GGGGHgGG',
-  'gGH..GGg',
-  'GGG..GHG',
-  'gHG..GgG',
+  'GgHGg',
+  'GKGKG',
+  'GGKGg',
+  'gKKKG',
+  'GKgKH',
+  'HGgGG',
+  'GgGHG',
+  'Gg.gH',
 ];
 export const CREEPER_PAL = { G: '#5fbf4f', g: '#3f9a3a', H: '#8fdc7a', K: '#1b1b1b' };
 
@@ -171,26 +164,15 @@ export const ZOMBIE = [
 ];
 export const ZOMBIE_PAL = { h: '#4f8f3c', k: '#13230f', S: '#2fa3a3', P: '#3b3f9e' };
 
-// Skeleton: big skull with square eye sockets and teeth, ribcage on a spine, thin limbs,
-// one arm held out gripping a bow (string drawn faint).
+// Skeleton, zombie-sized: skull with eye sockets and teeth, arm held out to a bow, spine, pelvis, thin legs.
 export const SKELETON = [
-  '.WWWWWWWw..',
-  '.WkkWWkkw..',
-  '.WkkWWkkw..',
-  '.WWWkkWWw..',
-  '.wkWkWkWw..',
-  '.swwwwwws..',
-  '..wWWWWw.b.',
-  '..W.Ws.W.tb',
-  '..WWWWWW.tb',
-  '..W.Ws.WWWb',
-  '..WWWWW..tb',
-  '..s.Ws...tb',
-  '...wWWw..tb',
-  '...W..W..b.',
-  '...W..W....',
-  '...w..w....',
-  '...W..W....',
-  '...s..s....',
+  '.WWWW..',
+  '.WkWk..',
+  '.wsWsb.',
+  '.wWWWWb',
+  '..W..tb',
+  '.WWW.tb',
+  '.w.w.b.',
+  '.W.W...',
 ];
 export const SKELETON_PAL = { W: '#e6e6e6', w: '#b4b4b4', s: '#7c7c7c', k: '#1e1e1e', b: '#7a4a1e', t: '#9a9a9a' };
