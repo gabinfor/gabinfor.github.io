@@ -56,7 +56,10 @@ const rg = refl.getContext('2d')!;
 let fireflies: { ax: number; ay: number; ph: number }[] = [];
 let birds: Bird[] = [];
 let smoke: { x: number; y: number; age: number }[] = [];
-let meteors: { x: number; y: number; vx: number; vy: number; life: number }[] = [];
+/** Shooting stars: `len` is the trail length in sky pixels; fireballs are rarer, brighter and greener. */
+type Meteor = { x: number; y: number; vx: number; vy: number; life: number; max: number; len: number; fireball: boolean };
+let meteors: Meteor[] = [];
+let sparks: { x: number; y: number; vy: number; life: number }[] = [];
 let sun: { x: number; y: number; r: number } | null = null;
 let shadesUntil = 0;
 
@@ -320,17 +323,42 @@ function drawFireflies(ctx: CanvasRenderingContext2D, m: SkyMath, t: number) {
 }
 
 function drawMeteors(ctx: CanvasRenderingContext2D) {
+  const px = new Pixels();
   for (const s of meteors) {
-    for (let i = 0; i < 7; i++) {
-      const x = Math.round(s.x - s.vx * i * 0.012), y = Math.round(s.y - s.vy * i * 0.012);
-      if (dither(x, y) < (1 - i / 7) * Math.min(1, s.life * 2)) { ctx.fillStyle = i ? '#cfd8ff' : '#ffffff'; ctx.fillRect(x, y, 1, 1); }
+    // fade in fast, out slowly; the trail tapers and thins out behind the head
+    const k = s.life / s.max, a = Math.min(1, (1 - k) * 6) * Math.min(1, k * 2.5);
+    const sp = Math.hypot(s.vx, s.vy), ux = s.vx / sp, uy = s.vy / sp;
+    const head = s.fireball ? '#eaffef' : '#ffffff', mid = s.fireball ? '#a8ffc4' : '#d6e0ff', tail = s.fireball ? '#5fd08a' : '#8c9ccc';
+    for (let i = 0; i < s.len; i++) {
+      const x = Math.round(s.x - ux * i), y = Math.round(s.y - uy * i), f = i / s.len;
+      if (dither(x, y) >= a * (1 - f) * 1.15) continue;
+      px.add(i < 2 ? head : f < 0.45 ? mid : tail, x, y);
     }
+    if (s.fireball && a > 0.3) { const x = Math.round(s.x), y = Math.round(s.y); px.add(head, x - 1, y); px.add(head, x, y - 1); px.add(mid, x + 1, y); px.add(mid, x, y + 1); }
   }
+  for (const k of sparks) if (dither(k.x | 0, k.y | 0) < k.life) px.add('#c8ffd8', k.x | 0, k.y | 0);
+  px.flush(ctx);
+}
+
+/** Meteor showers on their real peak nights: the Perseids and the Geminids. */
+function inShower(d = new Date()) {
+  const m = d.getMonth(), day = d.getDate();
+  return (m === 7 && day >= 11 && day <= 13) || (m === 11 && day >= 13 && day <= 15);
+}
+function spawnMeteor() {
+  const dir = Math.random() < 0.5 ? 1 : -1, fireball = Math.random() < 0.08;
+  const ang = (0.25 + Math.random() * 0.6) * (Math.PI / 2) * 0.7; // shallow to fairly steep
+  const speed = fireball ? 45 + Math.random() * 25 : 70 + Math.random() * 60;
+  const max = fireball ? 1.6 + Math.random() * 0.6 : 0.45 + Math.random() * 0.6;
+  meteors.push({
+    x: Math.random() * W, y: Math.random() * H * 0.38, vx: dir * Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+    life: max, max, len: fireball ? 18 + Math.round(Math.random() * 8) : 8 + Math.round(Math.random() * 10), fireball,
+  });
 }
 
 function drawBloom(m: SkyMath, t: number) {
   // Nothing glowing (an overcast day)? Hide the layer so the browser skips blurring it.
-  const glowing = lights.sun || lights.moon || lights.stars > 0.3 || fireworks.active || meteors.length || m.n > 0.5 || weather.flash > 0 || mc.active;
+  const glowing = lights.sun || lights.moon || lights.stars > 0.3 || fireworks.active || meteors.length || sparks.length || m.n > 0.5 || weather.flash > 0 || mc.active;
   bloomCanvas.style.visibility = glowing ? '' : 'hidden';
   if (!glowing) return;
   bg.clearRect(0, 0, W, H);
@@ -556,14 +584,16 @@ function update(dt: number, t: number, m: SkyMath) {
   for (const p of smoke) { p.age += dt; p.y -= 4 * dt; p.x += (wind * 1.2 + Math.sin(p.age * 2) * 0.8) * dt; }
   smoke = smoke.filter((p) => p.age < 5);
 
-  // shooting stars on clear nights
-  if (m.n > 0.7 && weather.p.cover < 0.5 && Math.random() < dt / 20) {
-    const dir = Math.random() < 0.5 ? 1 : -1;
-    meteors.push({ x: Math.random() * W, y: Math.random() * H * 0.3, vx: dir * (50 + Math.random() * 30), vy: 22, life: 0.7 });
-  }
+  // shooting stars on clear nights (about every 9 s; every couple of seconds during a shower)
+  if (m.n > 0.6 && weather.p.cover < 0.6 && Math.random() < dt / (inShower() ? 2 : 9)) spawnMeteor();
   planes.update(dt, weather.p.rain < 0.1 && weather.p.cover < 0.8, m.n < 0.4, t);
-  for (const s of meteors) { s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; }
+  for (const s of meteors) {
+    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    if (s.fireball && Math.random() < dt * 14) sparks.push({ x: s.x, y: s.y, vy: 4 + Math.random() * 6, life: 0.8 });
+  }
   meteors = meteors.filter((s) => s.life > 0);
+  for (const k of sparks) { k.y += k.vy * dt; k.life -= dt * 1.4; }
+  sparks = sparks.filter((k) => k.life > 0);
 }
 
 // ---------- time, loop & events ----------
@@ -651,6 +681,12 @@ if (perfOn) (window as unknown as { __skyShapes: unknown }).__skyShapes = () =>
   clouds.filter((c) => c.shape).map((c) => ({ shape: c.shape, x: (c.x + c.w / 2) * S, y: (c.y * H + c.h / 2) * S }));
 if (perfOn) (window as unknown as { __skyMobs: unknown }).__skyMobs = () =>
   mc.mobs.map((m) => ({ kind: m.kind, state: m.state, ...mc.center(m, S) }));
+// ?perf: spawn shooting stars now (`fireball` forces one) and get their heads in screen pixels.
+if (perfOn) (window as unknown as { __skyMeteors: unknown }).__skyMeteors = (n = 1, fireball = false) => {
+  for (let i = 0; i < n; i++) { spawnMeteor(); if (fireball) Object.assign(meteors[meteors.length - 1], { fireball: true, life: 2, max: 2, len: 22 }); }
+  wake();
+  return meteors.map((s) => ({ x: s.x * S, y: s.y * S, fireball: s.fireball }));
+};
 if (perfOn) (window as unknown as { __skyBench: unknown }).__skyBench = (frames = 60, step = 0) => {
   for (const k in perf) delete perf[k];
   let h = hourNow(performance.now());
@@ -704,6 +740,18 @@ addEventListener('pointerdown', (e) => {
   if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast')) return;
   const x = e.clientX / S, y = e.clientY / S, h = hourNow(performance.now()), m = window.__skyMath(h);
   if (mc.pointerDown(x, y, Date.now() / 1000)) { wake(); return; } // clicked a mob
+  // caught a shooting star (anywhere along its trail)
+  const caught = meteors.find((s) => {
+    const sp = Math.hypot(s.vx, s.vy), ux = s.vx / sp, uy = s.vy / sp, dx = x - s.x, dy = y - s.y;
+    const along = -(dx * ux + dy * uy), across = Math.abs(dx * uy - dy * ux);
+    return along > -4 && along < s.len + 4 && across < 5;
+  });
+  if (caught) {
+    caught.life = Math.min(caught.life, 0.15);
+    [880, 1175, 1568, 2093].forEach((f, i) => blip(f, i * 0.06));
+    if (!spotted.has('wish')) { spotted.add('wish'); toast('you caught a shooting star. make a wish.', 'Make a Wish', 'firework'); }
+    wake(); return;
+  }
   const now = Date.now() / 1000;
   const shaped = clouds.find((c) => c.shape && smooth(c.th - 0.06, c.th + 0.06, weather.p.cover) > 0.5
     && x >= c.x && x <= c.x + c.w && y >= c.y * H - 4 && y <= c.y * H + c.h);
