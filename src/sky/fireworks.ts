@@ -1,4 +1,4 @@
-import { clamp, dither, disc } from './palette';
+import { Pixels, clamp, dither, disc } from './palette';
 import { noise } from '../scripts/clicky';
 
 const COLORS = ['#ff4d4d', '#ffd84a', '#5bd1ff', '#ff7ad9', '#7dff8a', '#ffffff', '#ffa64a', '#b48cff'];
@@ -91,13 +91,14 @@ export class Fireworks {
       g.fillStyle = '#fff3c4'; g.fillRect(r.x | 0, r.y | 0, 1, 1);
     }
     for (const f of this.flashes) { g.fillStyle = '#ffffff'; disc(g, f.x | 0, f.y | 0, 3, 0.6); }
+    const px = new Pixels();
     for (const s of this.sparks) {
       const a = s.life / s.max, x = s.x | 0, y = s.y | 0;
       if (s.flicker && Math.random() < 0.35) continue;
       if (dither(x, y) >= a * 1.4) continue;
-      g.fillStyle = s.color;
-      g.fillRect(x, y, 1, 1);
-      if (a > 0.6) g.fillRect((s.x - s.vx * 0.04) | 0, (s.y - s.vy * 0.04) | 0, 1, 1);
+      px.add(s.color, x, y);
+      if (a > 0.6) px.add(s.color, (s.x - s.vx * 0.04) | 0, (s.y - s.vy * 0.04) | 0);
     }
+    px.flush(g);
   }
 }

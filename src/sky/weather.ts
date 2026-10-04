@@ -124,27 +124,31 @@ export class WeatherFx {
     const fade = LAYERS[layer].fade;
     if (this.p.rain > 0.02) {
       const rain = mix(mix([170, 195, 235], bottom, 0.3), [90, 100, 140], n * 0.5);
-      g.fillStyle = rgb(mix(rain, bottom, fade), 0.85 - fade * 0.4);
-      const s = this.slant;
+      // All of a layer's drops and splashes go into one path and one fill.
+      const path = new Path2D(), s = this.slant;
       for (let i = 0, N = this.nDrops; i < N; i++) {
         const d = this.drops[i];
         if (d.layer !== layer) continue;
         const x = d.x | 0, y = d.y | 0;
-        if (s < 0.25 || d.len < 2) g.fillRect(x, y - d.len, 1, d.len);
-        else for (let j = 0; j < d.len; j++) g.fillRect(x - Math.round(j * s), y - j, 1, 1);
+        if (s < 0.25 || d.len < 2) path.rect(x, y - d.len, 1, d.len);
+        else for (let j = 0; j < d.len; j++) path.rect(x - Math.round(j * s), y - j, 1, 1);
       }
       for (const sp of this.splashes) {
         if (sp.layer !== layer) continue;
         const o = sp.life > 0.07 ? 1 : 2;
-        g.fillRect(sp.x - o, sp.y - o, 1, 1); g.fillRect(sp.x + o, sp.y - o, 1, 1);
+        path.rect(sp.x - o, sp.y - o, 1, 1); path.rect(sp.x + o, sp.y - o, 1, 1);
       }
+      g.fillStyle = rgb(mix(rain, bottom, fade), 0.85 - fade * 0.4);
+      g.fill(path);
     }
     if (this.p.snow > 0.02) {
-      g.fillStyle = rgb(mix(mix([248, 250, 255], [150, 158, 200], n * 0.6), bottom, fade));
+      const path = new Path2D();
       for (let i = 0, N = this.nFlakes; i < N; i++) {
         const f = this.flakes[i];
-        if (f.layer === layer) g.fillRect(f.x | 0, f.y | 0, f.size, f.size);
+        if (f.layer === layer) path.rect(f.x | 0, f.y | 0, f.size, f.size);
       }
+      g.fillStyle = rgb(mix(mix([248, 250, 255], [150, 158, 200], n * 0.6), bottom, fade));
+      g.fill(path);
     }
   }
 

@@ -2,7 +2,7 @@
 // with its own detail. Static parts are rendered into cached layer canvases and
 // only redrawn when the light, weather or size changes; animated bits (lake
 // shimmer, smoke, lights) are drawn on top every frame by the caller.
-import { type RGB, NIGHT, clamp, dither, hex, mix, rgb, rng } from './palette';
+import { type RGB, NIGHT, Pixels, clamp, dither, hex, mix, rgb, rng } from './palette';
 import { FENCE, FENCE_PAL, HOUSE, HOUSE_PAL, HOUSE_WINDOW, drawSprite } from './sprites';
 
 // ---------- noise ----------
@@ -41,6 +41,10 @@ export class Land {
   /** Top of all terrain, mountains included (used to hide lights behind it). */
   skyline = new Int16Array(1);
   lakeTop = 0;
+  /** Lake rows that can ever be seen above the hills (the reflection skips the rest). */
+  lakeRows = 0;
+  /** Cached silhouettes (terrain below the skyline / below the hills), for cutting out glow. */
+  skylinePath = new Path2D(); groundPath = new Path2D();
   house = { x: 0, y: 0 };
   lamp = { x: 0, y: 0 };
   village: { x: number; y: number }[] = [];
@@ -83,7 +87,17 @@ export class Land {
     this.hills = HILLS.map((L) => Int16Array.from({ length: W }, (_, x) =>
       Math.round(H * (L.base - L.amp * (Math.sin(x * L.f + L.s) + 0.5 * Math.sin(x * L.f * 2.6 + L.s * 2) + 0.25 * (vnoise(x / 9, L.s) - 0.5))))));
     this.ground = Int16Array.from({ length: W }, (_, x) => Math.min(...this.hills.map((h) => h[x])));
+    this.lakeRows = Math.max(0, ...Array.from(this.ground, (y) => y - this.lakeTop)) + 1;
     this.skyline = Int16Array.from({ length: W }, (_, x) => Math.min(this.back[x], this.front[x], this.ground[x]));
+    const silhouette = (ys: Int16Array) => {
+      const p = new Path2D();
+      p.moveTo(0, H);
+      for (let x = 0; x < W; x++) { p.lineTo(x, ys[x]); p.lineTo(x + 1, ys[x]); }
+      p.lineTo(W, H); p.closePath();
+      return p;
+    };
+    this.skylinePath = silhouette(this.skyline);
+    this.groundPath = silhouette(this.ground);
 
     const near = this.hills[2], cl = (x: number) => clamp(Math.round(x), 0, W - 1);
     const maxIn = (a: Int16Array, x0: number, w: number) => Math.max(...Array.from({ length: w }, (_, i) => a[cl(x0 + i)]));
@@ -173,38 +187,38 @@ export class Land {
     const rim = rgb(mix(base, [255, 255, 255], 0.3)), speckL = rgb(mix(base, [18, 22, 56], 0.07)), speckD = rgb(mix(base, [18, 22, 56], 0.24));
     const snow = rgb(sh(C.snow)), snowSh = rgb(sh(C.snowShade));
     const snowBase = H * (snowAt + st.snow * 0.05);
+    // Drawn in passes (base, texture, snow); each pass is one batched fill per colour.
+    const body = new Pixels(), tex = new Pixels(), cap = new Pixels();
     for (let x = 0; x < W; x++) {
-      const y0 = ys[x], s = shadow[x];
-      g.fillStyle = dark; g.fillRect(x, y0, 1, H - y0);
-      if (s > y0) { g.fillStyle = lit; g.fillRect(x, y0, 1, s - y0); g.fillStyle = rim; g.fillRect(x, y0, 1, 1); }
+      const y0 = ys[x], s = Math.min(H, shadow[x]);
+      if (s > y0) { body.add(rim, x, y0); body.add(lit, x, y0 + 1, 1, s - y0 - 1); body.add(dark, x, s, 1, H - s); }
+      else body.add(dark, x, y0, 1, H - y0);
       // rock texture and crevices
-      for (let y = y0 + 2; y < Math.min(H, y0 + 40); y++) {
-        const h = hash(x * 73 + y * 151, seed);
-        if (h < 0.025) { g.fillStyle = y < s ? speckL : speckD; g.fillRect(x, y, 1, 1); }
-      }
+      for (let y = y0 + 2; y < Math.min(H, y0 + 40); y++) if (hash(x * 73 + y * 151, seed) < 0.025) tex.add(y < s ? speckL : speckD, x, y);
       if (hash(x, seed + 1) < 0.07 && s > y0 + 4) {
-        g.fillStyle = dark;
         const len = 3 + Math.floor(hash(x, seed + 2) * 7);
-        for (let k = 0; k < len; k++) g.fillRect(x + (k > len / 2 ? 1 : 0), y0 + 2 + k, 1, 1);
+        for (let k = 0; k < len; k++) tex.add(dark, x + (k > len / 2 ? 1 : 0), y0 + 2 + k);
       }
       // jagged snowline; snow on the shadow side is bluer
       const line = snowBase + (vnoise(x / 5, seed + 3) - 0.5) * 6;
       for (let y = y0; y < line + 1; y++) {
         if (y >= line - 1 && dither(x, y) >= 0.5) continue;
-        g.fillStyle = y < s ? snow : snowSh;
-        g.fillRect(x, y, 1, 1);
+        cap.add(y < s ? snow : snowSh, x, y);
       }
     }
+    body.flush(g); tex.flush(g); cap.flush(g);
     if (!forest) return;
     // a forest along the foot of the front range: bumpy canopy with spires
     const fBody = rgb(sh(C.forest)), fLit = rgb(sh(C.forestLit));
+    const trees = new Pixels(), tops = new Pixels();
     for (let x = 0; x < W; x++) {
       const top = Math.max(ys[x] + 3, Math.round(H * 0.6 + vnoise(x / 3.3, seed + 4) * 3));
       if (top >= this.lakeTop) continue;
-      g.fillStyle = fBody; g.fillRect(x, top, 1, H - top);
-      if (hash(x, seed + 5) < 0.4) { g.fillRect(x, top - 1, 1, 1); if (hash(x, seed + 6) < 0.4) g.fillRect(x, top - 2, 1, 1); }
-      if (hash(x, seed + 7) < 0.3) { g.fillStyle = fLit; g.fillRect(x, top, 1, 1); }
+      trees.add(fBody, x, top, 1, H - top);
+      if (hash(x, seed + 5) < 0.4) trees.add(fBody, x, top - (hash(x, seed + 6) < 0.4 ? 2 : 1), 1, hash(x, seed + 6) < 0.4 ? 2 : 1);
+      if (hash(x, seed + 7) < 0.3) tops.add(fLit, x, top);
     }
+    trees.flush(g); tops.flush(g);
   }
 
   // ---------- lake ----------
@@ -250,36 +264,44 @@ export class Land {
     const { W, H } = this, ys = this.hills[layer - L_FAR], sh = this.shader(st, layer);
     let col = sh(mix(color, st.bottom, haze));
     col = mix(col, this.snowC(st), st.snow * 0.6); // snowy fields
-    const lower = rgb(mix(col, [0, 0, 0], 0.1));
+    // the hill body as one stepped polygon (integer, axis-aligned edges stay crisp)
+    const body = new Path2D();
+    body.moveTo(0, H);
+    for (let x = 0; x < W; x++) { body.lineTo(x, ys[x]); body.lineTo(x + 1, ys[x]); }
+    body.lineTo(W, H);
+    body.closePath();
     g.fillStyle = rgb(col);
-    for (let x = 0; x < W; x++) g.fillRect(x, ys[x], 1, H - ys[x]);
+    g.fill(body);
     // meadow patches
-    g.fillStyle = rgb(mix(col, [255, 255, 200], 0.06));
+    const patches = new Pixels(), patchC = rgb(mix(col, [255, 255, 200], 0.06));
     for (const p of this.patches) {
       if (p.layer !== layer) continue;
       for (let dx = -Math.ceil(p.rx); dx <= p.rx; dx++) {
         const x = Math.round(p.x + dx);
         if (x < 0 || x >= W) continue;
         const half = p.ry * Math.sqrt(Math.max(0, 1 - (dx / p.rx) ** 2)), cy = ys[x] + p.dy;
-        for (let y = Math.round(cy - half); y <= cy + half; y++) if (y > ys[x] + 1) g.fillRect(x, y, 1, 1);
+        const y0 = Math.max(ys[x] + 2, Math.round(cy - half)), y1 = Math.floor(cy + half);
+        if (y1 >= y0) patches.add(patchC, x, y0, 1, y1 - y0 + 1);
       }
     }
+    patches.flush(g);
     // darker lower slopes, eased in with a few dithered rows
-    g.fillStyle = lower;
+    const lower = new Pixels(), lowerC = rgb(mix(col, [0, 0, 0], 0.1));
     for (let x = 0; x < W; x++) {
       const y1 = ys[x] + 16;
-      for (let y = ys[x] + 12; y < y1; y++) if (dither(x, y) < (y - ys[x] - 11) / 5) g.fillRect(x, y, 1, 1);
-      g.fillRect(x, y1, 1, H - y1);
+      for (let y = ys[x] + 12; y < y1; y++) if (dither(x, y) < (y - ys[x] - 11) / 5) lower.add(lowerC, x, y);
+      lower.add(lowerC, x, y1, 1, H - y1);
     }
+    lower.flush(g);
     // rim
-    g.fillStyle = rgb(mix(col, [255, 255, 255], 0.07));
-    for (let x = 0; x < W; x++) g.fillRect(x, ys[x] + 1, 1, 1);
-    g.fillStyle = rgb(mix(col, [255, 255, 255], 0.16));
-    for (let x = 0; x < W; x++) g.fillRect(x, ys[x], 1, 1);
+    const rim = new Pixels(), rim1 = rgb(mix(col, [255, 255, 255], 0.16)), rim2 = rgb(mix(col, [255, 255, 255], 0.07));
+    for (let x = 0; x < W; x++) { rim.add(rim1, x, ys[x]); rim.add(rim2, x, ys[x] + 1); }
+    rim.flush(g);
     const depth = st.snow * 3;
     if (depth > 0) {
-      g.fillStyle = rgb(this.snowC(st));
-      for (let x = 0; x < W; x++) for (let j = 0; j < Math.ceil(depth); j++) if (dither(x, ys[x] + j) < depth - j) g.fillRect(x, ys[x] + j, 1, 1);
+      const snow = new Pixels(), snowC = rgb(this.snowC(st));
+      for (let x = 0; x < W; x++) for (let j = 0; j < Math.ceil(depth); j++) if (dither(x, ys[x] + j) < depth - j) snow.add(snowC, x, ys[x] + j);
+      snow.flush(g);
     }
     return { ys, sh, col };
   }
@@ -308,24 +330,24 @@ export class Land {
     // a dirt path from the door down out of the picture
     if (st.snow < 0.6) {
       const dx0 = this.house.x + 9.5, dy0 = this.house.y + HOUSE.length;
-      const dirt = rgb(sh(C.dirt)), edge = rgb(sh(C.dirtEdge));
-      for (let i = 0; i <= 240; i++) {
-        const t = i / 240, u = 1 - t;
+      const dirt = rgb(sh(C.dirt)), edge = rgb(sh(C.dirtEdge)), path = new Pixels();
+      for (let i = 0; i <= 120; i++) {
+        const t = i / 120, u = 1 - t;
         const x = u * u * dx0 + 2 * u * t * (dx0 - 4) + t * t * (dx0 - W * 0.12);
         const y = u * u * dy0 + 2 * u * t * (H - 6) + t * t * (H + 2);
-        const w = 1 + t * 5;
-        for (let k = Math.round(-w / 2); k <= w / 2; k++) {
-          g.fillStyle = Math.abs(k) >= w / 2 - 0.5 && w > 2 ? edge : dirt;
-          g.fillRect(Math.round(x + k), Math.round(y), 1, 1);
-        }
+        const w = 1 + t * 5, x0 = Math.round(x - w / 2), x1 = Math.round(x + w / 2), py = Math.round(y);
+        if (w > 2) { path.add(edge, x0, py); path.add(edge, x1, py); path.add(dirt, x0 + 1, py, x1 - x0 - 1, 1); }
+        else path.add(dirt, x0, py, x1 - x0 + 1, 1);
       }
+      path.flush(g);
     }
     // grass tufts and flowers
-    const grass = rgb(sh(hex('#6cbf5a')));
+    const tufts = new Pixels(), grass = rgb(sh(hex('#6cbf5a')));
     for (const [x, flower] of this.tufts) {
-      if (flower) { g.fillStyle = rgb(sh(hex(flower))); g.fillRect(x, ys[x] - 1, 1, 1); }
-      else if (st.snow < 0.5) { g.fillStyle = grass; g.fillRect(x, ys[x] - 1, 1, 1); }
+      if (flower) tufts.add(rgb(sh(hex(flower))), x, ys[x] - 1);
+      else if (st.snow < 0.5) tufts.add(grass, x, ys[x] - 1);
     }
+    tufts.flush(g);
     this.drawRocks(g, st, L_NEAR, sh, ys);
     this.drawTrees(g, st, L_NEAR, sh, ys);
 
@@ -363,11 +385,12 @@ export class Land {
     pine(g, 9, H + 1, Math.round(H * 0.34), cols, st.snow, 5);
     pine(g, W - 4, H + 1, Math.round(H * 0.46), cols, st.snow, 4);
     // tall grass along the bottom edge
-    g.fillStyle = rgb(sh(st.snow > 0.5 ? mix(C.fgGrass, C.snow, 0.5) : C.fgGrass));
+    const grass = new Pixels(), grassC = rgb(sh(st.snow > 0.5 ? mix(C.fgGrass, C.snow, 0.5) : C.fgGrass));
     for (let x = 0; x < W; x++) {
       const h = Math.floor(hash(x, 50) * 4) + (hash(x, 51) < 0.15 ? 3 : 0);
-      if (h > 0) g.fillRect(x, H - h, 1, h);
+      if (h > 0) grass.add(grassC, x, H - h, 1, h);
     }
+    grass.flush(g);
   }
 
   // ---------- props ----------
@@ -399,9 +422,8 @@ type TreeCols = { body: string; lit: string; dark: string; trunk: string };
 function pine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow: number, seed: number) {
   const trunkH = Math.max(1, Math.round(h * 0.12)), crownH = h - trunkH;
   const tiers = Math.max(2, Math.round(crownH / 4)), maxHalf = Math.max(1, Math.round(h * 0.28));
-  g.fillStyle = cols.trunk;
-  g.fillRect(cx, baseY - trunkH, h > 24 ? 2 : 1, trunkH);
-  const snowC = 'rgb(236,240,252)';
+  const px = new Pixels();
+  px.add(cols.trunk, cx, baseY - trunkH, h > 24 ? 2 : 1, trunkH);
   let prevHalf = -1;
   for (let y = 0; y < crownH; y++) {
     const t = y / crownH, tierPos = ((y * tiers) / crownH) % 1;
@@ -410,19 +432,22 @@ function pine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow
     const py = baseY - trunkH - crownH + y;
     for (let dx = -half; dx <= half; dx++) {
       const exposed = Math.abs(dx) > prevHalf;
-      g.fillStyle = snow > 0 && exposed && dither(cx + dx, py) < snow * 0.9 ? snowC
-        : dx < -half * 0.3 ? cols.lit : dx > half * 0.35 ? cols.dark : cols.body;
-      g.fillRect(cx + dx, py, 1, 1);
+      px.add(snow > 0 && exposed && dither(cx + dx, py) < snow * 0.9 ? SNOW
+        : dx < -half * 0.3 ? cols.lit : dx > half * 0.35 ? cols.dark : cols.body, cx + dx, py);
     }
     prevHalf = half;
   }
+  px.flush(g);
 }
+
+const SNOW = 'rgb(236,240,252)';
 
 /** Procedural deciduous tree (or bush): a few overlapping blobs, lit from the upper left. */
 function roundTree(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow: number, seed: number, bush: boolean) {
   const trunkH = bush ? 0 : Math.round(h * 0.35), R = Math.max(2, Math.round(bush ? h * 0.6 : h * 0.33));
-  if (trunkH) { g.fillStyle = cols.trunk; g.fillRect(cx, baseY - trunkH, h > 14 ? 2 : 1, trunkH); }
-  const cy = baseY - trunkH - R + (bush ? 1 : 1);
+  const px = new Pixels();
+  if (trunkH) px.add(cols.trunk, cx, baseY - trunkH, h > 14 ? 2 : 1, trunkH);
+  const cy = baseY - trunkH - R + 1;
   const blobs: [number, number, number][] = bush
     ? [[0, 0, R], [-R * 0.7, R * 0.3, R * 0.7], [R * 0.7, R * 0.3, R * 0.7]]
     : [[0, 0, R], [-R * 0.65, R * 0.3, R * 0.72], [R * 0.65, R * 0.25, R * 0.75], [0, -R * 0.45, R * 0.72]];
@@ -430,11 +455,11 @@ function roundTree(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols,
   const ext = Math.ceil(R * 1.5);
   for (let y = -ext; y <= ext; y++) for (let x = -ext; x <= ext; x++) {
     if (!inside(x, y)) continue;
-    const px = cx + x, py = cy + y, d = x + y;
+    const pxX = cx + x, pxY = cy + y, d = x + y;
     let c = d < -R * 0.6 ? cols.lit : d > R * 0.5 ? cols.dark : cols.body;
-    if (c === cols.body && hash(px * 13 + py * 7, seed) < 0.12) c = cols.lit; // leafy speckle
-    if (snow > 0 && !inside(x, y - 1) && dither(px, py) < snow * 0.9) c = 'rgb(236,240,252)';
-    g.fillStyle = c;
-    g.fillRect(px, py, 1, 1);
+    if (c === cols.body && hash(pxX * 13 + pxY * 7, seed) < 0.12) c = cols.lit; // leafy speckle
+    if (snow > 0 && !inside(x, y - 1) && dither(pxX, pxY) < snow * 0.9) c = SNOW;
+    px.add(c, pxX, pxY);
   }
+  px.flush(g);
 }

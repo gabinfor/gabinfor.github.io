@@ -1,6 +1,6 @@
 // The pixel sky: a low-res canvas behind the page, synced to the visitor's local
 // time, with weather, wildlife and fireworks. See Sky.astro for the controls.
-import { type RGB, NIGHT, clamp, disc, dither, glow, hex, mix, rgb, rng, skyAt, smooth } from './palette';
+import { type RGB, NIGHT, Pixels, clamp, disc, dither, glow, hex, mix, rgb, rng, skyAt, smooth } from './palette';
 import { HOUSE_CHIMNEY, HOUSE_WINDOW } from './sprites';
 import { L_FAR, L_FRONT, L_LAKE, L_MID, L_MOUNTAINS, L_NEAR, Land } from './land';
 import { type Weather, WeatherFx, forecast, isWeather } from './weather';
@@ -8,7 +8,9 @@ import { Fireworks } from './fireworks';
 import { blip, noise, toast } from '../scripts/clicky';
 import './eggs';
 
-const S = 4; // screen pixels per sky pixel
+// Screen pixels per sky pixel: 4, or more on big screens so the sky canvas stays
+// around 480x300 at most (every per-frame cost scales with its area).
+let S = 4;
 const canvas = document.querySelector<HTMLCanvasElement>('.sky canvas.base')!;
 const g = canvas.getContext('2d')!;
 // Bloom layer: light sources only, blurred by CSS and screen-blended on top. Toggled via html[data-bloom].
@@ -26,9 +28,9 @@ type Bird = { x: number; y: number; vx: number; vy: number; ph: number };
 let stars: Star[] = [];
 let clouds: Cloud[] = [];
 const land = new Land();
-// Scratch copy of the sky + mountains, mirrored into the lake each frame.
-const snap = document.createElement('canvas');
-const sg = snap.getContext('2d')!;
+// Scratch canvas holding this frame's flipped, squashed reflection (see reflect()).
+const refl = document.createElement('canvas');
+const rg = refl.getContext('2d')!;
 let fireflies: { ax: number; ay: number; ph: number }[] = [];
 let birds: Bird[] = [];
 let smoke: { x: number; y: number; age: number }[] = [];
@@ -78,6 +80,9 @@ function makeCloud(r: () => number, th: number, now: number): Cloud {
 }
 
 function layout() {
+  S = Math.max(4, Math.ceil(Math.max(innerWidth / 480, innerHeight / 300)));
+  const forced = Number(new URLSearchParams(location.search).get('scale'));
+  if (new URLSearchParams(location.search).has('perf') && forced >= 1) S = forced; // tuning only
   W = Math.max(1, Math.ceil(innerWidth / S));
   H = Math.max(1, Math.ceil(innerHeight / S));
   for (const c of [canvas, bloomCanvas]) {
@@ -95,7 +100,7 @@ function layout() {
   clouds = Array.from({ length: N }, (_, i) => makeCloud(rc, (i / N) * 0.95, now));
 
   land.layout(W, H);
-  snap.width = W; snap.height = H;
+  refl.width = W; refl.height = Math.max(1, land.lakeRows);
   const rf = rng(3);
   fireflies = Array.from({ length: 14 }, () => {
     const ax = rf() * W;
@@ -107,10 +112,13 @@ function layout() {
 
 // ---------- drawing ----------
 
-let grad: ImageData | null = null, gradKey = '';
+// The dithered sky gradient is built once per colour change into its own canvas and
+// copied each frame with drawImage (a GPU blit) instead of re-uploading pixels.
+const gradCanvas = document.createElement('canvas');
+let gradKey = '';
 function drawGradient(top: RGB, bottom: RGB) {
   const key = `${top}|${bottom}|${W}x${H}`;
-  if (key !== gradKey || !grad) {
+  if (key !== gradKey) {
     const N = 12, cols = Array.from({ length: N }, (_, i) => mix(top, bottom, i / (N - 1)));
     const img = g.createImageData(W, H), d = img.data, span = H * 0.8;
     for (let y = 0; y < H; y++) {
@@ -120,9 +128,11 @@ function drawGradient(top: RGB, bottom: RGB) {
         d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
       }
     }
-    grad = img; gradKey = key;
+    gradCanvas.width = W; gradCanvas.height = H;
+    gradCanvas.getContext('2d')!.putImageData(img, 0, 0);
+    gradKey = key;
   }
-  g.putImageData(grad, 0, 0);
+  g.drawImage(gradCanvas, 0, 0);
 }
 
 const moonPhase = () => {
@@ -186,8 +196,10 @@ function drawClouds(cover: number, cols: string[]) {
     const v = smooth(c.th - 0.06, c.th + 0.06, cover);
     if (v <= 0) continue;
     const x0 = Math.floor(c.x), y0 = Math.round(c.y * H);
-    if (v >= 1) for (const [x, y, len, tone] of c.runs) { g.fillStyle = cols[tone]; g.fillRect(x0 + x, y0 + y, len, 1); }
-    else for (const [x, y, tone] of c.px) if (dither(x0 + x, y0 + y) < v) { g.fillStyle = cols[tone]; g.fillRect(x0 + x, y0 + y, 1, 1); }
+    const px = new Pixels(); // one fill per tone; tones within a cloud don't overlap
+    if (v >= 1) for (const [x, y, len, tone] of c.runs) px.add(cols[tone], x0 + x, y0 + y, len, 1);
+    else for (const [x, y, tone] of c.px) if (dither(x0 + x, y0 + y) < v) px.add(cols[tone], x0 + x, y0 + y);
+    px.flush(g);
   }
 }
 
@@ -212,6 +224,10 @@ function drawMeteors(ctx: CanvasRenderingContext2D) {
 }
 
 function drawBloom(m: SkyMath, t: number) {
+  // Nothing glowing (an overcast day)? Hide the layer so the browser skips blurring it.
+  const glowing = lights.sun || lights.moon || lights.stars > 0.3 || fireworks.active || meteors.length || m.n > 0.5 || weather.flash > 0;
+  bloomCanvas.style.visibility = glowing ? '' : 'hidden';
+  if (!glowing) return;
   bg.clearRect(0, 0, W, H);
   const { sun: s, moon: mo } = lights;
   if (s) { bg.fillStyle = rgb(s.c, 0.5 * s.vis); disc(bg, s.x, s.y, s.r); }
@@ -225,14 +241,14 @@ function drawBloom(m: SkyMath, t: number) {
   // Sky lights are behind the terrain: punch out its silhouette so nothing glows through a mountain.
   bg.globalCompositeOperation = 'destination-out';
   bg.fillStyle = '#000';
-  for (let x = 0; x < W; x++) bg.fillRect(x, land.skyline[x], 1, H - land.skyline[x]);
+  bg.fill(land.skylinePath);
   bg.globalCompositeOperation = 'source-over';
   // Their reflections glow in the lake too; then hide whatever the hills cover.
   bg.globalAlpha = 0.6;
   reflect(bg, bloomCanvas, t);
   bg.globalAlpha = 1;
   bg.globalCompositeOperation = 'destination-out';
-  for (let x = 0; x < W; x++) bg.fillRect(x, land.ground[x], 1, H - land.ground[x]);
+  bg.fill(land.groundPath);
   bg.globalCompositeOperation = 'source-over';
   // Lights in front of (or on) the terrain.
   drawFireflies(bg, m, t);
@@ -257,12 +273,19 @@ function villageWindows(ctx: CanvasRenderingContext2D, t: number) {
  * visible water shows the mountains and some sky (stars, moon, fireworks), with a ripple.
  */
 function reflect(dst: CanvasRenderingContext2D, src: HTMLCanvasElement, t: number) {
-  const top = land.lakeTop;
-  for (let j = 1; top + j < H; j++) {
-    const sy = top - 1 - j * 4;
-    if (sy < 0) break;
+  const top = land.lakeTop, rows = land.lakeRows, srcH = Math.min(top, rows * 4);
+  if (rows < 2 || srcH < 1) return;
+  // 1. One scaled copy: flip the band above the waterline and squash it 4:1 (nearest-neighbour,
+  //    so row j of `refl` is source row top-1-4j).
+  rg.clearRect(0, 0, W, rows);
+  rg.imageSmoothingEnabled = false;
+  rg.setTransform(1, 0, 0, -0.25, 0, srcH / 4);
+  rg.drawImage(src, 0, top - srcH, W, srcH, 0, 0, W, srcH);
+  rg.setTransform(1, 0, 0, 1, 0, 0);
+  // 2. Lay it on the water in 2-row strips, each nudged sideways for the ripple.
+  for (let j = 1; j < rows; j += 2) {
     const dx = j > 2 ? Math.round(Math.sin(t * 1.6 + j * 0.9)) : 0;
-    dst.drawImage(src, 0, sy, W, 1, dx, top + j, W, 1);
+    dst.drawImage(refl, 0, j, W, 2, dx, top + j, W, 2);
   }
 }
 
@@ -287,23 +310,44 @@ function drawCritters(top: RGB, t: number) {
 
 type SkyMath = ReturnType<Window['__skyMath']>;
 
+// ?perf in the URL: per-section frame timings, averaged, in window.__skyPerf (for tuning).
+const perfOn = new URLSearchParams(location.search).has('perf');
+const perf: Record<string, { total: number; n: number; max: number }> = {};
+let perfT = 0;
+function mark(name?: string) {
+  if (!perfOn) return;
+  const now = performance.now();
+  if (name) {
+    const e = (perf[name] ??= { total: 0, n: 0, max: 0 }), d = now - perfT;
+    e.total += d; e.n++; e.max = Math.max(e.max, d);
+  }
+  perfT = now;
+}
+if (perfOn) (window as unknown as { __skyPerf: () => unknown }).__skyPerf = () =>
+  Object.fromEntries(Object.entries(perf).map(([k, v]) => [k, { avg: +(v.total / v.n).toFixed(3), max: +v.max.toFixed(2) }]));
+
 function draw(h: number, t: number) {
   const m = window.__skyMath(h), wx = weather.p;
   let { top, bottom } = skyAt(h);
   top = mix(top, mix([120, 126, 140], [24, 26, 40], m.n), wx.gloom * 0.75);
   bottom = mix(bottom, mix([170, 174, 184], [40, 42, 58], m.n), wx.gloom * 0.7);
+  mark();
   drawGradient(top, bottom);
+  mark('gradient');
   lights = { stars: 0 };
   const horizon = Math.round(H * 0.74), R = Math.max(4, Math.round(Math.min(W, H) * 0.05));
 
   const sa = smooth(0.55, 0.95, m.n) * (1 - wx.cover * 0.9);
   lights.stars = sa;
-  if (sa > 0.02) for (const s of stars) {
-    const a = sa * s.b * (s.tw ? 0.45 + 0.55 * Math.sin(t * 3 + s.x * 1.7) : 1);
-    if (dither(s.x, s.y) >= a * 1.2) continue;
-    g.fillStyle = s.c;
-    g.fillRect(s.x, s.y, 1, 1);
-    if (s.big && a > 0.5) { g.fillRect(s.x - 1, s.y, 1, 1); g.fillRect(s.x + 1, s.y, 1, 1); g.fillRect(s.x, s.y - 1, 1, 1); g.fillRect(s.x, s.y + 1, 1, 1); }
+  if (sa > 0.02) {
+    const px = new Pixels();
+    for (const s of stars) {
+      const a = sa * s.b * (s.tw ? 0.45 + 0.55 * Math.sin(t * 3 + s.x * 1.7) : 1);
+      if (dither(s.x, s.y) >= a * 1.2) continue;
+      if (s.big && a > 0.5) { px.add(s.c, s.x - 1, s.y, 3, 1); px.add(s.c, s.x, s.y - 1, 1, 3); }
+      else px.add(s.c, s.x, s.y);
+    }
+    px.flush(g);
   }
 
   if (m.sunP >= 0 && m.sunP <= 1) drawSun(m, horizon, R, wx.cover, bottom, t);
@@ -315,19 +359,20 @@ function draw(h: number, t: number) {
 
   fireworks.draw(g);
   drawCritters(top, t);
+  mark('sky');
 
   // Landscape, back to front, with each depth layer's rain/snow drawn right after it.
   const st = { n: m.n, gloom: wx.gloom, fog: wx.fog, snow: weather.snowCover, top, bottom };
   land.render(st);
+  mark('landRender');
   land.draw(g, L_MOUNTAINS);
   weather.drawPrecip(g, 0, m.n, bottom);
-  sg.clearRect(0, 0, W, H);
-  sg.drawImage(canvas, 0, 0);
   land.draw(g, L_LAKE);
   g.globalAlpha = 0.65;
-  reflect(g, snap, t);
+  reflect(g, canvas, t); // reads the rows above the waterline, already drawn this frame
   g.globalAlpha = 1;
   land.drawLakeTint(g, st);
+  mark('reflection');
   const lo = lights.sun ?? lights.moon;
   land.drawLakeFx(g, t, st, lo && { x: lo.x, c: lo.c, a: lo.vis * (lights.moon && !lights.sun ? 0.4 + lights.moon.lit * 0.6 : 1) });
   land.draw(g, L_FAR);
@@ -343,7 +388,9 @@ function draw(h: number, t: number) {
   weather.drawPrecip(g, 4, m.n, bottom); // foreground: in front of everything
   weather.drawFog(g, m.n, bottom);
   weather.drawLightning(g);
+  mark('landAndWeather');
   if (bloomOn()) drawBloom(m, t);
+  mark('bloom');
 }
 
 // ---------- simulation ----------
@@ -417,7 +464,9 @@ function tick(now: number) {
     const dt = Math.min(0.25, (now - lastSim) / 1000);
     last = lastSim = now;
     const h = hourNow(now), t = Date.now() / 1000;
+    mark();
     update(dt, t, window.__skyMath(h));
+    mark('update');
     draw(h, t);
     const minute = Math.floor(h * 60);
     if (minute !== lastMinute) { lastMinute = minute; everyMinute(); announce(h); }
@@ -435,6 +484,20 @@ function schedule(immediate = false) {
 const wake = () => { last = 0; lastSim = performance.now(); schedule(true); };
 
 addEventListener('resize', () => { layout(); wake(); });
+
+// ?perf: window.__skyBench(frames, hoursPerFrame) runs frames synchronously (works even in a
+// hidden tab) and returns per-section timings; a non-zero hour step exercises landscape re-renders.
+if (perfOn) (window as unknown as { __skyBench: unknown }).__skyBench = (frames = 60, step = 0) => {
+  for (const k in perf) delete perf[k];
+  let h = hourNow(performance.now());
+  for (let i = 0; i < frames; i++, h = (h + step) % 24) {
+    const t = Date.now() / 1000 + i / 12;
+    mark(); update(1 / 12, t, window.__skyMath(h)); mark('update');
+    draw(h, t);
+  }
+  const all = Object.values(perf).reduce((a, v) => a + v.total, 0);
+  return { W, H, S, frameAvgMs: +(all / frames).toFixed(2), ...(window as unknown as { __skyPerf: () => object }).__skyPerf() };
+};
 addEventListener('sky:set', (e) => { manualHour = e.detail; lapse = null; wake(); });
 addEventListener('sky:timelapse', () => { lapse = { start: performance.now(), from: hourNow(performance.now()) }; wake(); });
 addEventListener('sky:weather', (e) => {

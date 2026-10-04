@@ -76,3 +76,22 @@ export function dayStrip(bands = 48) {
   }
   return `linear-gradient(90deg, ${stops.join(', ')})`;
 }
+
+/**
+ * Batches single-colour pixel runs into one Path2D per colour, so drawing thousands of
+ * pixels costs a handful of fill() calls instead of thousands of fillRect() calls.
+ * Colours are filled in the order first used; use separate batches (or flush) where
+ * later pixels must cover earlier ones of a different colour.
+ */
+export class Pixels {
+  private paths = new Map<string, Path2D>();
+  add(color: string, x: number, y: number, w = 1, h = 1) {
+    let p = this.paths.get(color);
+    if (!p) this.paths.set(color, (p = new Path2D()));
+    p.rect(x, y, w, h);
+  }
+  flush(g: CanvasRenderingContext2D) {
+    for (const [c, p] of this.paths) { g.fillStyle = c; g.fill(p); }
+    this.paths.clear();
+  }
+}
