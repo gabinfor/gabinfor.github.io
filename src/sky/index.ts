@@ -5,6 +5,7 @@ import { CLOUD_SHAPES, DOG_WAG, GLYPHS, HOUSE_CHIMNEY, HOUSE_WINDOW } from './sp
 import { L_FAR, L_FRONT, L_LAKE, L_MID, L_MOUNTAINS, L_NEAR, Land } from './land';
 import { type Weather, WeatherFx, forecast, isWeather } from './weather';
 import { Fireworks } from './fireworks';
+import { type MobKind, Minecraft } from './mc';
 import { blip, noise, toast } from '../scripts/clicky';
 import './eggs';
 
@@ -26,6 +27,8 @@ type CloudLook = { w: number; h: number; px: [number, number, number][]; runs: [
 type ShapeName = keyof typeof CLOUD_SHAPES;
 type Cloud = CloudLook & {
   x: number; y: number; speed: number; th: number; shape?: ShapeName; normal?: CloudLook;
+  /** Flat, blocky Minecraft version of this cloud (blocky mode), made on first use. */
+  blocky?: CloudLook;
   /** Reaction to a click (cat hops, dog wags and zooms), as a wall-clock time window. */
   react?: { start: number; until: number };
 };
@@ -37,6 +40,9 @@ type Bird = { x: number; y: number; vx: number; vy: number; ph: number };
 let stars: Star[] = [];
 let clouds: Cloud[] = [];
 const land = new Land();
+const mc = new Minecraft(land);
+/** Blocky Minecraft look (the "minecraft" secret word toggles html[data-mc]). */
+const mcMode = () => document.documentElement.dataset.mc === 'on';
 // Scratch canvas holding this frame's flipped, squashed reflection (see reflect()).
 const refl = document.createElement('canvas');
 const rg = refl.getContext('2d')!;
@@ -104,6 +110,29 @@ function reshape(c: Cloud, name?: ShapeName) {
   else if (c.normal) { Object.assign(c, c.normal, { shape: undefined, normal: undefined }); }
 }
 const randomShape = (): ShapeName => (Math.random() < 0.5 ? 'cat' : 'dog');
+
+/** Minecraft-style cloud: a row of 4px blocks with a shorter row on top. */
+function blockyLook(w: number): CloudLook {
+  const cols = Math.max(3, Math.round(w / 4)), bw = cols * 4, h = 6, grid = new Uint8Array(bw * h);
+  const lo = Math.floor(Math.random() * cols * 0.35), hi = Math.max(lo + 1, cols - Math.floor(Math.random() * cols * 0.35));
+  for (let y = 0; y < h; y++) for (let x = 0; x < bw; x++) {
+    const c = x >> 2;
+    if (y >= 3 || (c >= lo && c < hi)) grid[y * bw + x] = 1;
+  }
+  return shadeCloud(grid, bw, h, 1);
+}
+
+/** Square, dithered halo (the blocky sun and moon). */
+function squareGlow(cx: number, cy: number, r0: number, r1: number, strength: number) {
+  const px = new Pixels(), col = g.fillStyle as string;
+  for (let k = r0 + 1; k <= r1; k++) {
+    const a = strength * (1 - (k - r0) / (r1 - r0 + 1));
+    for (let i = -k; i <= k; i++) for (const [x, y] of [[cx + i, cy - k], [cx + i, cy + k], [cx - k, cy + i], [cx + k, cy + i]]) {
+      if (dither(x, y) < a) px.add(col, x, y);
+    }
+  }
+  px.flush(g);
+}
 let dogLooks: [CloudLook, CloudLook] | null = null; // tail down / tail up
 
 /** Where a cloud is drawn this frame, including a cat's hop. */
@@ -214,9 +243,13 @@ function drawSun(m: SkyMath, horizon: number, R: number, cover: number, bottom: 
   // Behind cloud the sun fades into the sky colour (solid, not dithered — dithering looks like noise).
   const c = mix(mix(hex('#fff2a8'), hex('#ff8a3d'), 1 - smooth(0, 0.35, m.e)), bottom, 1 - vis);
   lights.sun = { x, y, r: R, c, vis };
-  g.fillStyle = rgb(mix(c, bottom, 0.35)); glow(g, x, y, R, R + 6, 0.55 * vis);
-  g.fillStyle = rgb(mix(c, hex('#ff8a3d'), 0.35 * vis)); disc(g, x, y, R);
-  g.fillStyle = rgb(c); disc(g, x, y, R - 1);
+  const blocky = mcMode();
+  g.fillStyle = rgb(mix(c, bottom, 0.35));
+  if (blocky) squareGlow(x, y, R, R + 6, 0.55 * vis); else glow(g, x, y, R, R + 6, 0.55 * vis);
+  g.fillStyle = rgb(mix(c, hex('#ff8a3d'), 0.35 * vis));
+  if (blocky) g.fillRect(x - R, y - R, 2 * R + 1, 2 * R + 1); else disc(g, x, y, R);
+  g.fillStyle = rgb(c);
+  if (blocky) g.fillRect(x - R + 1, y - R + 1, 2 * R - 1, 2 * R - 1); else disc(g, x, y, R - 1);
   g.fillStyle = 'rgba(255,255,255,0.7)'; g.fillRect(x - Math.round(R * 0.45), y - Math.round(R * 0.5), 2, 1);
   if (t < shadesUntil) { // easter egg: the sun puts on sunglasses
     const lw = Math.max(2, Math.round(R * 0.6)), lh = Math.max(2, Math.round(R * 0.35)), ly = y - Math.round(R * 0.25);
@@ -240,15 +273,17 @@ function drawMoon(m: SkyMath, horizon: number, R: number, cover: number, top: RG
   if (vis < 0.25) return; // hidden behind thick cloud
   const lit = mix(top, fullLit, vis), crater = mix(lit, [120, 110, 90], 0.25);
   const isLit = (dx: number, dy: number) => {
-    const w = Math.sqrt(Math.max(0, r * r - dy * dy)) || 1, nx = dx / w;
+    const w = (mcMode() ? r : Math.sqrt(Math.max(0, r * r - dy * dy))) || 1, nx = dx / w;
     return p < 0.5 ? nx > k : nx < -k;
   };
   lights.moon = { x, y, r, c: lit, vis, lit: (1 - k) / 2 };
-  g.fillStyle = rgb(lit); glow(g, x, y, r, r + 4, 0.22 * vis * (1 - Math.abs(k) * 0.5));
+  g.fillStyle = rgb(lit);
+  if (mcMode()) squareGlow(x, y, r, r + 4, 0.22 * vis * (1 - Math.abs(k) * 0.5));
+  else glow(g, x, y, r, r + 4, 0.22 * vis * (1 - Math.abs(k) * 0.5));
   const dark = rgb(mix(top, lit, 0.12)), litS = rgb(lit), craterS = rgb(crater);
   const craters = [[-0.35, -0.3], [0.25, 0.2], [-0.1, 0.45], [0.4, -0.35], [0.05, -0.05]].map(([a, b]) => [Math.round(a * r), Math.round(b * r)]);
   for (let dy = -r; dy <= r; dy++) {
-    const half = Math.round(Math.sqrt(r * r - dy * dy));
+    const half = mcMode() ? r : Math.round(Math.sqrt(r * r - dy * dy));
     for (let dx = -half; dx <= half; dx++) {
       const on = isLit(dx, dy);
       g.fillStyle = !on ? dark : craters.some(([cx, cy]) => cx === dx && cy === dy) ? craterS : litS;
@@ -262,13 +297,14 @@ function drawClouds(cover: number, cols: string[], t: number) {
     const v = smooth(c.th - 0.06, c.th + 0.06, cover);
     if (v <= 0) continue;
     const { x: x0, y: y0 } = cloudPos(c, t);
+    const look: CloudLook = mcMode() && !c.shape ? (c.blocky ??= blockyLook(c.w)) : c;
     if (c.shape === 'dog' && c.react && t < c.react.until) { // wag
       dogLooks ??= [shapeLook('dog'), shapeLook('dogWag')];
       Object.assign(c, dogLooks[Math.floor(t * 8) & 1]);
     }
     const px = new Pixels(); // one fill per tone; tones within a cloud don't overlap
-    if (v >= 1) for (const [x, y, len, tone] of c.runs) px.add(cols[tone], x0 + x, y0 + y, len, 1);
-    else for (const [x, y, tone] of c.px) if (dither(x0 + x, y0 + y) < v) px.add(cols[tone], x0 + x, y0 + y);
+    if (v >= 1) for (const [x, y, len, tone] of look.runs) px.add(cols[tone], x0 + x, y0 + y, len, 1);
+    else for (const [x, y, tone] of look.px) if (dither(x0 + x, y0 + y) < v) px.add(cols[tone], x0 + x, y0 + y);
     px.flush(g);
   }
 }
@@ -295,7 +331,7 @@ function drawMeteors(ctx: CanvasRenderingContext2D) {
 
 function drawBloom(m: SkyMath, t: number) {
   // Nothing glowing (an overcast day)? Hide the layer so the browser skips blurring it.
-  const glowing = lights.sun || lights.moon || lights.stars > 0.3 || fireworks.active || meteors.length || m.n > 0.5 || weather.flash > 0;
+  const glowing = lights.sun || lights.moon || lights.stars > 0.3 || fireworks.active || meteors.length || m.n > 0.5 || weather.flash > 0 || mc.active;
   bloomCanvas.style.visibility = glowing ? '' : 'hidden';
   if (!glowing) return;
   bg.clearRect(0, 0, W, H);
@@ -322,6 +358,7 @@ function drawBloom(m: SkyMath, t: number) {
   bg.globalCompositeOperation = 'source-over';
   // Lights in front of (or on) the terrain.
   drawFireflies(bg, m, t);
+  mc.drawBloom(bg, t);
   if (m.n > 0.5) {
     const { x, y, w, h } = HOUSE_WINDOW;
     bg.fillStyle = '#ffd45a';
@@ -453,6 +490,7 @@ function draw(h: number, t: number) {
   weather.drawPrecip(g, 2, m.n, bottom);
   land.draw(g, L_NEAR);
   drawSmoke(m, bottom);
+  mc.draw(g, t, m.n);
   weather.drawPrecip(g, 3, m.n, bottom);
   drawFireflies(g, m, t);
   land.draw(g, L_FRONT);
@@ -538,6 +576,11 @@ function everyMinute() {
   const d = new Date();
   const block = Math.floor(d.getHours() / 4);
   if (!manualWeather && block !== weatherBlock) { weatherBlock = block; weather.name = forecast(d); }
+  // At night, now and then, something wanders the hills.
+  const n = window.__skyMath(hourNow(performance.now())).n;
+  if (n > 0.6 && mc.mobs.length < 2 && Math.random() < 0.25) {
+    mc.spawn((['zombie', 'zombie', 'skeleton', 'creeper'] as const)[Math.floor(Math.random() * 4)]);
+  }
   // Happy new year!
   if (d.getMonth() === 0 && d.getDate() === 1 && d.getHours() === 0 && !newYearShown) { newYearShown = true; fireworks.show(24); }
 }
@@ -549,6 +592,8 @@ function tick(now: number) {
     const h = hourNow(now), t = Date.now() / 1000;
     mark();
     update(dt, t, window.__skyMath(h));
+    mc.update(dt, t, window.__skyMath(h).n);
+    document.documentElement.classList.toggle('quake', mc.shake > 0);
     mark('update');
     draw(h, t);
     const minute = Math.floor(h * 60);
@@ -560,7 +605,7 @@ function tick(now: number) {
 let raf = 0, timer = 0;
 function schedule(immediate = false) {
   cancelAnimationFrame(raf); clearTimeout(timer);
-  const busy = lapse || fireworks.active;
+  const busy = lapse || fireworks.active || mc.active;
   if (still && !busy && !immediate) timer = window.setTimeout(() => (raf = requestAnimationFrame(tick)), 30_000);
   else raf = requestAnimationFrame(tick);
 }
@@ -573,12 +618,14 @@ addEventListener('resize', () => { layout(); wake(); });
 // ?perf: where the shaped clouds are, in screen pixels (for testing their click reactions).
 if (perfOn) (window as unknown as { __skyShapes: unknown }).__skyShapes = () =>
   clouds.filter((c) => c.shape).map((c) => ({ shape: c.shape, x: (c.x + c.w / 2) * S, y: (c.y * H + c.h / 2) * S }));
+if (perfOn) (window as unknown as { __skyMobs: unknown }).__skyMobs = () =>
+  mc.mobs.map((m) => ({ kind: m.kind, state: m.state, x: (m.x + 3) * S, y: (land.hills[2][clamp(Math.round(m.x + 3), 0, W - 1)] - 4) * S }));
 if (perfOn) (window as unknown as { __skyBench: unknown }).__skyBench = (frames = 60, step = 0) => {
   for (const k in perf) delete perf[k];
   let h = hourNow(performance.now());
   for (let i = 0; i < frames; i++, h = (h + step) % 24) {
     const t = Date.now() / 1000 + i / 12;
-    mark(); update(1 / 12, t, window.__skyMath(h)); mark('update');
+    mark(); update(1 / 12, t, window.__skyMath(h)); mc.update(1 / 12, t, window.__skyMath(h).n); mark('update');
     draw(h, t);
   }
   const all = Object.values(perf).reduce((a, v) => a + v.total, 0);
@@ -606,6 +653,15 @@ addEventListener('sky:weather', (e) => {
 });
 addEventListener('sky:fireworks', (e) => { fireworks.show(e.detail); wake(); });
 addEventListener('sky:bloom', wake);
+addEventListener('mc:spawn', (e) => { mc.spawn((e as CustomEvent<MobKind>).detail); wake(); });
+addEventListener('pointerup', () => mc.pointerUp());
+addEventListener('pointercancel', () => mc.pointerUp());
+// Right-click on the hills places a block, so keep the context menu out of the way there.
+addEventListener('contextmenu', (e) => {
+  const target = e.target instanceof Element ? e.target : null;
+  if (target && !target.closest('.window, a, button, input, textarea, select, label, .b88, .toast, .hotbar')
+    && land.hillAt(e.clientX / S, e.clientY / S) >= 0) e.preventDefault();
+});
 // Summon a shaped cloud somewhere in view (the "cat"/"dog" secret words).
 addEventListener('sky:cloud', (e) => {
   const c = clouds.filter((k) => !k.shape).sort((a, b) => a.th - b.th)[0];
@@ -621,8 +677,9 @@ let foundFireworks = false;
 const spotted = new Set<string>();
 addEventListener('pointerdown', (e) => {
   const target = e.target instanceof Element ? e.target : document.body;
-  if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast')) return;
+  if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast, .hotbar')) return;
   const x = e.clientX / S, y = e.clientY / S, h = hourNow(performance.now()), m = window.__skyMath(h);
+  if (mc.pointerDown(x, y, Date.now() / 1000, e.button)) { wake(); return; } // mobs, mining, placing
   const now = Date.now() / 1000;
   const shaped = clouds.find((c) => c.shape && smooth(c.th - 0.06, c.th + 0.06, weather.p.cover) > 0.5
     && x >= c.x && x <= c.x + c.w && y >= c.y * H - 4 && y <= c.y * H + c.h);
@@ -635,16 +692,16 @@ addEventListener('pointerdown', (e) => {
       for (let i = 0; i < 4; i++) hearts.push({ x: shaped.x + 3 + Math.random() * 8, y: shaped.y * H + 2, vy: -(5 + Math.random() * 4), life: 1 });
       blip(1300); blip(950, 0.12); blip(1500, 0.3);
     } else { blip(330); blip(260, 0.1); blip(330, 0.35); blip(260, 0.45); }
-    if (!spotted.has(shaped.shape!)) { spotted.add(shaped.shape!); toast(cat ? 'a cloud cat! it likes you.' : 'a cloud dog! zoomies!', 'you spotted a shape'); }
+    if (!spotted.has(shaped.shape!)) { spotted.add(shaped.shape!); toast(cat ? 'a cloud cat! it likes you.' : 'a cloud dog! zoomies!', 'you spotted a shape', 'cloud'); }
   } else if (sun && Math.hypot(x - sun.x, y - sun.y) <= sun.r + 3) {
     shadesUntil = Date.now() / 1000 + 8;
     blip(1500); blip(2000, 0.08);
-    toast('the sun is too cool for you now.', 'shades on');
+    toast('the sun is too cool for you now.', 'shades on', 'sun');
   } else if (m.n > 0.5) {
     // Always burst above the skyline, or a low click would explode out of sight behind a mountain.
     const top = Math.min(...Array.from({ length: 21 }, (_, i) => land.skyline[clamp((x | 0) + i - 10, 0, W - 1)]));
     fireworks.launch(W, H, land.ground, x, Math.min(y, top - 10));
-    if (!foundFireworks) { foundFireworks = true; toast('you lit up the night sky. click again!'); }
+    if (!foundFireworks) { foundFireworks = true; toast('you lit up the night sky. click again!', 'Fireworks', 'firework'); }
   } else if (y < land.ground[clamp(x | 0, 0, W - 1)]) {
     for (let k = 0; k < 5; k++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = 18 + Math.random() * 10;
@@ -657,6 +714,7 @@ addEventListener('pointerdown', (e) => {
 });
 
 layout();
+if (Math.random() < 0.08) mc.spawn('creeper'); // a rare visitor
 everyMinute();
 announce(hourNow(performance.now()));
 schedule(true);

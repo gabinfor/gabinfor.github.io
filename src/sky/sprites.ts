@@ -49,12 +49,20 @@ export type SpriteOpts = {
   snow?: number; snowColor?: RGB;
   /** Per-char colour overrides (e.g. a lit window). Not tinted. */
   over?: Record<string, RGB>;
+  /** Mirror horizontally (sprites face right). */
+  flip?: boolean;
+  /** Wash every pixel toward this colour (a creeper's white flash, a hit mob's red). */
+  flash?: RGB; flashAmount?: number;
 };
 
 export function drawSprite(g: CanvasRenderingContext2D, sprite: readonly string[], pal: Pal, x0: number, y0: number, o: SpriteOpts = {}) {
   const base = parse(pal);
   const cols: Record<string, string> = {};
-  for (const k in base) cols[k] = rgb(o.tint ? mix(base[k], o.tint, o.amount ?? 0) : base[k]);
+  for (const k in base) {
+    let c = o.tint ? mix(base[k], o.tint, o.amount ?? 0) : base[k];
+    if (o.flash) c = mix(c, o.flash, o.flashAmount ?? 0.7);
+    cols[k] = rgb(c);
+  }
   for (const k in o.over ?? {}) cols[k] = rgb(o.over![k]);
   const snow = o.snow ?? 0, snowC = rgb(o.snowColor ?? [240, 244, 255]);
   for (let y = 0; y < sprite.length; y++) {
@@ -63,7 +71,7 @@ export function drawSprite(g: CanvasRenderingContext2D, sprite: readonly string[
       const ch = row[x];
       if (ch === ' ') continue;
       const exposed = y === 0 || sprite[y - 1][x] === ' ' || sprite[y - 1][x] === undefined;
-      const px = x0 + x, py = y0 + y;
+      const px = x0 + (o.flip ? row.length - 1 - x : x), py = y0 + y;
       g.fillStyle = snow > 0 && exposed && !(o.over && ch in o.over) && dither(px, py) < snow ? snowC : cols[ch];
       g.fillRect(px, py, 1, 1);
     }
@@ -128,3 +136,49 @@ export const GLYPHS: Record<string, string[]> = {
   F: ['###', '#..', '##.', '#..', '#..'],
   '!': ['#', '#', '#', '.', '#'],
 };
+
+// ---------- Minecraft mobs (drawn facing right; mirrored when walking left) ----------
+export const CREEPER = [
+  'GgGGgG',
+  'GKGGKG',
+  'gGKKGg',
+  'GKKKKG',
+  'GKggKG',
+  '.GgGG.',
+  '.gGGg.',
+  'GG..GG',
+];
+export const CREEPER_PAL = { G: '#5bb84a', g: '#3f8f35', K: '#10200f' };
+
+export const ZOMBIE = [
+  '.hhhh.',
+  '.hkhk.',
+  '.hhhh.',
+  '.SSShh',
+  '.SSS..',
+  '.SSS..',
+  '.PPP..',
+  '.P.P..',
+];
+export const ZOMBIE_PAL = { h: '#4f8f3c', k: '#13230f', S: '#2fa3a3', P: '#3b3f9e' };
+
+export const SKELETON = [
+  '.wwww.',
+  '.kwkw.',
+  '.wwww.',
+  '..w..b',
+  '.wwwwb',
+  '..w..b',
+  '.w.w..',
+  '.w.w..',
+];
+export const SKELETON_PAL = { w: '#d4d4d4', k: '#2a2a2a', b: '#8a5a2b' };
+
+/** Destroy-stage cracks for a 4x4 block, cumulative (stage 1..5). */
+export const CRACKS: [number, number][][] = [
+  [[1, 1], [2, 2]],
+  [[0, 0], [3, 1]],
+  [[1, 3], [2, 0]],
+  [[0, 2], [3, 3], [3, 0]],
+  [[1, 2], [2, 1], [0, 3]],
+];

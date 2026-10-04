@@ -1,14 +1,24 @@
 // Secrets. Spoilers below!
 //  - Konami code (↑↑↓↓←→←→BA): fireworks finale
-//  - Type (outside any text box): rain, snow, storm, fog, cloudy, clear, forecast, boom, cat, dog, night, day, now
+//  - Type (outside any text box): rain, snow, storm, fog, cloudy, clear, forecast, boom, cat, dog, night, day, now,
+//    minecraft (blocky mode), creeper, zombie, skeleton
+//  - Minecraft: hold the mouse on a hill to mine a block, right-click to place it back
 //  - Click the sun: shades. Click the night sky: fireworks. Click the day sky: birds.
 import { toast } from '../scripts/clicky';
+import type { IconName } from '../data/icons';
 import type { Weather } from './forecast';
 
 const fire = (type: string, detail: unknown) => dispatchEvent(new CustomEvent(type, { detail }));
 const setWeather = (w: Weather | null) => fire('sky:weather', w);
 
-const WORDS: Record<string, [() => void, string]> = {
+function toggleBlocky() {
+  const on = document.documentElement.dataset.mc !== 'on';
+  if (on) document.documentElement.dataset.mc = 'on'; else delete document.documentElement.dataset.mc;
+  try { localStorage.setItem('mc', on ? 'on' : 'off'); } catch {}
+  return on;
+}
+
+const WORDS: Record<string, [() => void, string, IconName?]> = {
   rain: [() => setWeather('rain'), 'you summoned rain.'],
   snow: [() => setWeather('snow'), 'let it snow.'],
   storm: [() => setWeather('storm'), 'batten down the hatches.'],
@@ -17,8 +27,12 @@ const WORDS: Record<string, [() => void, string]> = {
   clear: [() => setWeather('clear'), 'clear skies ahead.'],
   forecast: [() => setWeather(null), 'back to the real forecast.'],
   boom: [() => fire('sky:fireworks', 8), 'boom!'],
-  cat: [() => fire('sky:cloud', 'cat'), 'look up: a cloud cat.'],
-  dog: [() => fire('sky:cloud', 'dog'), 'look up: a cloud dog.'],
+  cat: [() => fire('sky:cloud', 'cat'), 'look up: a cloud cat.', 'cloud'],
+  dog: [() => fire('sky:cloud', 'dog'), 'look up: a cloud dog.', 'cloud'],
+  minecraft: [() => toast(toggleBlocky() ? 'blocky clouds, a square sun, clicks that place blocks.' : 'back to normal.', 'Blocky Mode', 'block'), ''],
+  creeper: [() => fire('mc:spawn', 'creeper'), 'something is on the hill. ssss...', 'creeper'],
+  zombie: [() => fire('mc:spawn', 'zombie'), 'a zombie shambles onto the hill.', 'sword'],
+  skeleton: [() => fire('mc:spawn', 'skeleton'), 'a skeleton appears. rattle rattle.', 'sword'],
   night: [() => fire('sky:set', 23), 'goodnight.'],
   day: [() => fire('sky:set', 12.5), 'good morning!'],
   now: [() => fire('sky:set', null), 'back to your local time.'],
@@ -33,13 +47,13 @@ addEventListener('keydown', (e) => {
   if (k === KONAMI.length) {
     k = 0;
     fire('sky:fireworks', 20);
-    toast('+30 lives. enjoy the show.', 'cheat code accepted');
+    toast('+30 lives. enjoy the show.', 'cheat code accepted', 'firework');
     return;
   }
   if (key.length !== 1) return;
   typed = (typed + key).slice(-12);
   for (const [word, [run, msg]] of Object.entries(WORDS)) {
-    if (typed.endsWith(word)) { typed = ''; run(); toast(msg, `secret: "${word}"`); break; }
+    if (typed.endsWith(word)) { typed = ''; run(); if (msg) toast(msg, `secret: "${word}"`, WORDS[word][2] ?? 'check'); break; }
   }
 });
 

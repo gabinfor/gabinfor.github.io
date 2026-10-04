@@ -1,4 +1,5 @@
 // Clicky feedback: tiny chiptune blips, noise effects, pixel sparkles, toasts, and the window buttons.
+import { type IconName, iconRects } from '../data/icons';
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -50,19 +51,25 @@ export function noise({ dur = 0.5, freq = 800, sweep, type = 'lowpass', q = 0.7,
   src.start(t); src.stop(t + dur);
 }
 
-/** A little "achievement unlocked" window in the corner. */
-export function toast(text: string, title = 'achievement unlocked!') {
+/** A Minecraft-style "Advancement Made!" popup, top right. */
+export function toast(text: string, title = 'achievement unlocked!', icon: IconName = 'check') {
   const el = document.createElement('div');
-  el.className = 'toast window';
+  el.className = `toast adv${icon === 'creeper' ? ' adv-creeper' : ''}`;
   el.setAttribute('role', 'status');
-  el.innerHTML = `<div class="titlebar"><span class="tb-title"></span></div><div class="win-body"></div>`;
-  el.querySelector('.tb-title')!.textContent = `★ ${title}`;
-  el.querySelector('.win-body')!.textContent = text;
+  const rects = iconRects(icon).map(([x, y, w]) => `<rect x="${x}" y="${y}" width="${w}" height="1"/>`).join('');
+  el.innerHTML = `<div class="adv-icon"><svg viewBox="0 0 8 8" width="24" height="24" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true">${rects}</svg></div>
+    <div class="adv-body"><div class="adv-head">Advancement Made!</div><div class="adv-name"></div><div class="adv-text"></div></div>`;
+  el.querySelector('.adv-name')!.textContent = title;
+  el.querySelector('.adv-text')!.textContent = text;
+  document.querySelectorAll('.toast').forEach((t, i, all) => { if (i < all.length - 1) t.remove(); }); // keep it to two
   document.body.append(el);
   [660, 880, 1320].forEach((f, i) => blip(f, i * 0.07));
-  setTimeout(() => el.classList.add('out'), 3200);
-  setTimeout(() => el.remove(), 3600);
+  setTimeout(() => el.classList.add('out'), 3400);
+  setTimeout(() => el.remove(), 3800);
 }
+
+/** A soft "block placed" thud for clicks in blocky mode. */
+function thud() { noise({ dur: 0.07, freq: 520, gain: 0.28 }); }
 
 const COLORS = ['#ffd84a', '#ff5a1f', '#5bd1ff', '#ff7ad9', '#ffffff'];
 function sparkle(x: number, y: number) {
@@ -93,7 +100,10 @@ function syncGlassButton() {
 
 addEventListener('pointerdown', (e) => {
   const el = e.target instanceof Element ? e.target.closest('a, button, summary, input, label') : null;
-  if (el) blip(el.matches('a') ? 990 : 780);
+  if (el) {
+    if (document.documentElement.dataset.mc === 'on') thud();
+    else blip(el.matches('a') ? 990 : 780);
+  }
   if (!still) sparkle(e.clientX, e.clientY);
 });
 

@@ -195,15 +195,46 @@ textarea, input[type='text'] {
 }
 ::-webkit-scrollbar-corner { background: var(--face); }
 
-/* ---------- toasts ---------- */
-.toast {
-  position: fixed; right: 16px; bottom: 16px; z-index: 900; width: min(300px, calc(100vw - 32px));
-  animation: toast-in 0.3s steps(4);
+/* ---------- toasts: Minecraft "Advancement Made!" ---------- */
+.toast.adv {
+  position: fixed; top: 16px; right: 16px; z-index: 900; width: min(330px, calc(100vw - 32px));
+  display: flex; gap: 10px; align-items: center; padding: 8px 12px 8px 8px;
+  background: #212121; color: #fff; border: 2px solid #000; box-shadow: inset 0 0 0 2px #555, 4px 4px 0 rgb(0 0 0 / 0.35);
+  font: 13px/1.35 var(--pixel); animation: toast-in 0.3s steps(5);
 }
-.toast .win-body { padding: 10px 12px; font-size: 13px; }
-.toast.out { animation: toast-out 0.3s steps(4) forwards; }
-@keyframes toast-in { from { transform: translateY(120%); } }
-@keyframes toast-out { to { transform: translateY(140%); } }
+.toast.adv + .toast.adv { top: 92px; }
+.adv-icon {
+  width: 40px; height: 40px; flex: none; display: grid; place-items: center;
+  background: #8b8b8b; color: #262626; box-shadow: inset 2px 2px 0 #c6c6c6, inset -2px -2px 0 #555;
+}
+.adv-creeper .adv-icon { background: #5bb84a; color: #10200f; box-shadow: inset 2px 2px 0 #7fd06d, inset -2px -2px 0 #3f8f35; }
+.adv-head { color: #ffff55; }
+.adv-name { color: #fff; font-weight: 700; }
+.adv-text { color: #aaa; font-size: 12px; }
+.toast.out { animation: toast-out 0.3s steps(5) forwards; }
+@keyframes toast-in { from { transform: translateX(120%); } }
+@keyframes toast-out { to { transform: translateX(120%); } }
+
+/* ---------- screen shake (creeper explosion) ---------- */
+html.quake .page, html.quake .sky { animation: quake 0.12s steps(2) infinite; }
+@keyframes quake { 0% { transform: translate(3px, -2px); } 50% { transform: translate(-3px, 2px); } }
+@media (prefers-reduced-motion: reduce) { html.quake .page, html.quake .sky { animation: none; } }
+
+/* ---------- Minecraft hotbar ---------- */
+.hotbar {
+  position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 800;
+  display: flex; gap: 0; padding: 2px; background: rgb(0 0 0 / 0.55); border: 2px solid #000;
+  box-shadow: inset 0 0 0 2px #555;
+}
+.hotbar[hidden] { display: none; }
+.slot {
+  width: 40px; height: 40px; position: relative; display: grid; place-items: center; padding: 0;
+  background: rgb(139 139 139 / 0.35); border: 2px solid #373737; cursor: url('/cursors/hand.svg') 11 0, pointer;
+}
+.slot[aria-pressed='true'] { border-color: #fff; outline: 2px solid #000; z-index: 1; }
+.slot .count { position: absolute; right: 2px; bottom: 0; color: #fff; font: 700 12px var(--pixel); text-shadow: 2px 2px 0 #3f3f3f; }
+.slot .count:empty { display: none; }
+.slot svg { image-rendering: pixelated; }
 
 /* ---------- under construction ---------- */
 .construction {
