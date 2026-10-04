@@ -1,9 +1,11 @@
 ---
 import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
 import PostList from '../components/PostList.astro';
 import FriendsFeed from '../components/FriendsFeed.astro';
 import { SITE } from '../data/site';
+import { BLOGROLL } from '../data/blogroll';
 
 const posts = (await getCollection('blog', (p) => !p.data.draft))
   .sort((a, b) => +b.data.date - +a.data.date).slice(0, 5);
@@ -12,14 +14,18 @@ const posts = (await getCollection('blog', (p) => !p.data.draft))
   <h1>Welcome to my homepage!</h1>
   <div class="prose">
     <p>Hi, I'm <b>{SITE.author}</b>. This is my little corner of the web, where I write about the things I build and the things I'm learning.</p>
-    <p>Look up: the sky behind this page follows the clock wherever <i>you</i> are. Come back tonight and the stars will be out. Hit <b>⏩ time-lapse</b> in the status box to watch a whole day go by.</p>
+    <p>Look up: the sky behind this page follows the clock wherever <i>you</i> are, and the weather changes through the day. Come back tonight and the stars will be out. Hit <b>time-lapse</b> in the status box to watch a whole day go by.</p>
   </div>
 
-  <h2>✎ latest writing</h2>
+  <h2><Icon name="pencil" size={20} /> latest writing</h2>
   <PostList posts={posts} />
   <p><a href="/blog/">» all posts</a></p>
 
-  <h2>☺ from blogs I read</h2>
-  <FriendsFeed limit={6} />
-  <p><a href="/blogroll/">» the whole blogroll</a></p>
+  {BLOGROLL.length > 0 && (
+    <>
+      <h2><Icon name="globe" size={20} /> from blogs I read</h2>
+      <FriendsFeed limit={6} />
+      <p><a href="/blogroll/">» the whole blogroll</a></p>
+    </>
+  )}
 </Base>

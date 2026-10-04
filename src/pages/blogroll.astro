@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Badge88 from '../components/Badge88.astro';
+import Icon from '../components/Icon.astro';
 import FriendsFeed from '../components/FriendsFeed.astro';
 import { BLOGROLL } from '../data/blogroll';
 import { SITE } from '../data/site';
@@ -9,47 +10,56 @@ const snippet = `<a href="${SITE.url}"><img src="${SITE.url}/button.svg" width="
 ---
 <Base title="blogroll" description="Blogs I read, and what they've been writing lately.">
   <h1>Blogroll</h1>
-  <p class="prose">The web is better when sites link to each other. These are the blogs I read. Their newest posts get pulled in once a day. You can grab the whole list as <a href="/blogroll.opml">OPML</a> for your feed reader.</p>
+  {BLOGROLL.length === 0 ? (
+    <div class="construction">
+      <p>this page is under construction!</p>
+      <p class="muted">I'm still picking which sites to link. Check back soon.</p>
+    </div>
+  ) : (
+    <>
+      <p class="prose">The web is better when sites link to each other. These are the blogs I read. Their newest posts get pulled in once a day. You can grab the whole list as <a href="/blogroll.opml">OPML</a> for your feed reader.</p>
+      <ul class="roll">
+        {BLOGROLL.map((b) => (
+          <li>
+            <Badge88 name={b.name} href={b.url} img={b.button} />
+            <div>
+              <a href={b.url} rel="noopener"><b>{b.name}</b></a>
+              {b.note && <div class="muted">{b.note}</div>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  )}
 
-  <ul class="roll">
-    {BLOGROLL.map((b) => (
-      <li>
-        <Badge88 name={b.name} href={b.url} img={b.button} />
-        <div>
-          <a href={b.url} rel="noopener"><b>{b.name}</b></a>
-          {b.note && <div class="muted">{b.note}</div>}
-        </div>
-      </li>
-    ))}
-  </ul>
-
-  <h2>⚑ link to me!</h2>
+  <h2><Icon name="heart" size={20} /> link to me!</h2>
   <div class="linkme">
     <img src="/button.svg" width="88" height="31" alt={SITE.title} />
     <textarea readonly rows="3" aria-label="HTML for my 88x31 button">{snippet}</textarea>
-    <button type="button" class="btn" id="copy">📋 copy code</button>
+    <button type="button" class="btn" id="copy"><span class="idle"><Icon name="clipboard" /> copy code</span><span class="done" hidden><Icon name="check" /> copied!</span></button>
   </div>
 
-  <h2>☺ recently, around the web</h2>
-  <FriendsFeed limit={24} perBlog={6} />
+  {BLOGROLL.length > 0 && (
+    <>
+      <h2><Icon name="globe" size={20} /> recently, around the web</h2>
+      <FriendsFeed limit={24} perBlog={6} />
+    </>
+  )}
 </Base>
 <style>
   .roll { list-style: none; padding: 0; display: grid; gap: 12px; }
   .roll li { display: flex; gap: 12px; align-items: center; font-size: 13px; }
   .linkme { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .linkme img { image-rendering: pixelated; }
-  textarea {
-    flex: 1 1 260px; font: 12px var(--mono); resize: none; padding: 6px;
-    background: var(--win-bg); color: var(--win-ink); border: 2px solid var(--border);
-    box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.25);
-  }
+  textarea { flex: 1 1 260px; resize: none; }
 </style>
 <script>
   const btn = document.getElementById('copy')!;
   btn.addEventListener('click', async () => {
     const ta = document.querySelector('.linkme textarea') as HTMLTextAreaElement;
     try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
-    btn.textContent = '✔ copied!';
-    setTimeout(() => (btn.textContent = '📋 copy code'), 1500);
+    const [idle, done] = [btn.querySelector<HTMLElement>('.idle')!, btn.querySelector<HTMLElement>('.done')!];
+    idle.hidden = true; done.hidden = false;
+    setTimeout(() => { idle.hidden = false; done.hidden = true; }, 1500);
   });
 </script>

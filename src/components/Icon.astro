@@ -1,0 +1,11 @@
+---
+import { iconRects, type IconName } from '../data/icons';
+interface Props { name: IconName; size?: number; class?: string }
+const { name, size = 16, class: className } = Astro.props;
+---
+<svg class:list={['icon', className]} viewBox="0 0 8 8" width={size} height={size} shape-rendering="crispEdges" fill="currentColor" aria-hidden="true">
+  {iconRects(name).map(([x, y, w]) => <rect x={x} y={y} width={w} height="1" />)}
+</svg>
+<style>
+  .icon { display: inline-block; flex: none; vertical-align: -3px; }
+</style>

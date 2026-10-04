@@ -1,4 +1,4 @@
-// Clicky feedback: tiny square-wave blips, pixel sparkles, and the window buttons.
+// Clicky feedback: tiny chiptune blips, noise effects, pixel sparkles, toasts, and the window buttons.
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -8,17 +8,60 @@ const store = {
 let soundOn = store.get('sound') !== 'off';
 let ac: AudioContext | undefined;
 
-export function blip(freq = 880) {
-  if (!soundOn) return;
+/** An AudioContext, but only once the visitor has interacted (browsers block it before). */
+function audio() {
+  if (!soundOn) return null;
+  if (!ac && !navigator.userActivation?.hasBeenActive) return null;
   ac ??= new AudioContext();
-  const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+  if (ac.state === 'suspended') ac.resume();
+  return ac;
+}
+
+export function blip(freq = 880, delay = 0) {
+  const a = audio();
+  if (!a) return;
+  const t = a.currentTime + delay, o = a.createOscillator(), g = a.createGain();
   o.type = 'square';
   o.frequency.setValueAtTime(freq, t);
   o.frequency.exponentialRampToValueAtTime(freq / 2, t + 0.05);
   g.gain.setValueAtTime(0.05, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
-  o.connect(g).connect(ac.destination);
+  o.connect(g).connect(a.destination);
   o.start(t); o.stop(t + 0.08);
+}
+
+/** Filtered white noise: thunder, fireworks, whooshes. */
+export function noise({ dur = 0.5, freq = 800, sweep, type = 'lowpass', q = 0.7, gain = 0.1, delay = 0 }:
+  { dur?: number; freq?: number; sweep?: number; type?: BiquadFilterType; q?: number; gain?: number; delay?: number }) {
+  const a = audio();
+  if (!a) return;
+  const t = a.currentTime + delay;
+  const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf;
+  f.type = type; f.Q.value = q;
+  f.frequency.setValueAtTime(freq, t);
+  if (sweep) f.frequency.exponentialRampToValueAtTime(sweep, t + dur);
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(a.destination);
+  src.start(t); src.stop(t + dur);
+}
+
+/** A little "achievement unlocked" window in the corner. */
+export function toast(text: string, title = 'achievement unlocked!') {
+  const el = document.createElement('div');
+  el.className = 'toast window';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<div class="titlebar"><span class="tb-title"></span></div><div class="win-body"></div>`;
+  el.querySelector('.tb-title')!.textContent = `★ ${title}`;
+  el.querySelector('.win-body')!.textContent = text;
+  document.body.append(el);
+  [660, 880, 1320].forEach((f, i) => blip(f, i * 0.07));
+  setTimeout(() => el.classList.add('out'), 3200);
+  setTimeout(() => el.remove(), 3600);
 }
 
 const COLORS = ['#ffd84a', '#ff5a1f', '#5bd1ff', '#ff7ad9', '#ffffff'];
@@ -37,10 +80,7 @@ function sparkle(x: number, y: number) {
 }
 
 function syncSoundButton() {
-  document.querySelectorAll<HTMLButtonElement>('[data-sound]').forEach((b) => {
-    b.setAttribute('aria-pressed', String(soundOn));
-    b.textContent = soundOn ? '🔊 sound on' : '🔈 sound off';
-  });
+  document.querySelectorAll<HTMLButtonElement>('[data-sound]').forEach((b) => b.setAttribute('aria-pressed', String(soundOn)));
 }
 
 addEventListener('pointerdown', (e) => {
@@ -72,7 +112,7 @@ addEventListener('click', (e) => {
   const rnd = el.closest<HTMLElement>('[data-random]');
   if (rnd) {
     const urls: string[] = JSON.parse(rnd.dataset.random!);
-    location.href = urls[Math.floor(Math.random() * urls.length)];
+    if (urls.length) location.href = urls[Math.floor(Math.random() * urls.length)];
   }
 });
 

@@ -1,43 +1,99 @@
 ---
 import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
 import GpuBlobs from '../components/GpuBlobs.astro';
+import { dayStrip } from '../sky/palette';
+import { WEATHERS } from '../sky/forecast';
+import type { IconName } from '../data/icons';
+
+const weatherIcon: Record<(typeof WEATHERS)[number], IconName> = {
+  clear: 'sun', cloudy: 'cloud', rain: 'rain', storm: 'storm', snow: 'snow', fog: 'fog',
+};
 ---
-<Base title="lab" description="Interactive experiments: WebGPU, shaders, and other toys.">
-  <h1>⚗ The Lab</h1>
+<Base title="lab" description="Interactive experiments: a pixel sky, weather, WebGPU, and other toys.">
+  <h1><Icon name="flask" size={24} /> The Lab</h1>
   <p class="prose">A shelf of interactive experiments. Each one is a component I can also drop into any post.</p>
 
-  <h2>001 · sky scrubber</h2>
-  <p class="prose">The background is drawn live in a tiny canvas. Drag to set the hour yourself.</p>
-  <div class="scrub">
-    <input type="range" id="hour" min="0" max="23.99" step="0.05" aria-label="Hour of day" />
-    <output id="hour-out" class="pixel">--:--</output>
-    <button type="button" class="btn" id="hour-reset">↺ real time</button>
-  </div>
+  <h2>001 · sky control panel</h2>
+  <p class="prose">The background is drawn live in a tiny canvas. Drag the hour, change the weather, or set off some fireworks.</p>
+
+  <fieldset class="panel">
+    <legend>time of day</legend>
+    <div class="scrub">
+      <input type="range" id="hour" min="0" max="23.99" step="0.05" aria-label="Hour of day" style={`--track:${dayStrip()}`} />
+      <output id="hour-out" class="lcd">--:--</output>
+    </div>
+    <div class="ticks" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    <button type="button" class="btn" id="hour-reset"><Icon name="reset" />real time</button>
+  </fieldset>
+
+  <fieldset class="panel">
+    <legend>weather</legend>
+    <div class="row" role="group" aria-label="Weather">
+      {WEATHERS.map((w) => (
+        <button type="button" class="btn" data-weather={w} aria-pressed="false"><Icon name={weatherIcon[w]} />{w}</button>
+      ))}
+    </div>
+    <button type="button" class="btn" data-weather="" aria-pressed="false"><Icon name="reset" />today's forecast</button>
+  </fieldset>
+
+  <fieldset class="panel">
+    <legend>celebrate</legend>
+    <div class="row">
+      <button type="button" class="btn" id="fw"><Icon name="firework" />launch fireworks</button>
+      <button type="button" class="btn" id="night"><Icon name="moon" />make it night</button>
+    </div>
+    <p class="muted hint">They look best after dark. There may be other ways to set them off…</p>
+  </fieldset>
 
   <h2>002 · gooey blobs</h2>
   <GpuBlobs height="420px" hue={0.15} caption="Raymarched metaballs, WebGPU + WGSL, rendered at 1/3 resolution" />
 </Base>
+
 <style>
-  .scrub { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  input[type='range'] { flex: 1 1 220px; accent-color: var(--accent); }
-  output { font-size: 18px; min-width: 4ch; }
+  .panel { border: 2px groove var(--face); margin: 0 0 14px; padding: 10px 14px 14px; }
+  legend { font: 600 13px var(--pixel); padding: 0 6px; }
+  .scrub { display: flex; gap: 12px; align-items: center; }
+  input[type='range'] { flex: 1 1 auto; min-width: 0; }
+  .lcd {
+    font: 600 18px/1 var(--pixel); min-width: 6ch; text-align: center; padding: 5px 6px;
+    background: #10220f; color: #7dff8a; border: 2px solid var(--border); box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.5);
+    text-shadow: 0 0 6px rgb(125 255 138 / 0.6);
+  }
+  .ticks { display: flex; justify-content: space-between; font: 11px var(--pixel); color: var(--win-muted); margin: 2px calc(6ch + 26px) 10px 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .hint { font-size: 12px; margin: 4px 0 0; }
 </style>
+
 <script>
   const input = document.getElementById('hour') as HTMLInputElement;
   const out = document.getElementById('hour-out')!;
   const fmt = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+  const send = (type: string, detail: unknown) => dispatchEvent(new CustomEvent(type, { detail }));
+
   let dragging = false;
-  addEventListener('skychange', (e) => {
-    if (!dragging) input.value = String(e.detail.h);
-    out.textContent = fmt(e.detail.h);
-  });
   const h0 = window.__skyOverride ?? window.__skyHour();
   input.value = String(h0);
   out.textContent = fmt(h0);
-  input.addEventListener('input', () => {
-    dragging = true;
-    dispatchEvent(new CustomEvent('sky:set', { detail: Number(input.value) }));
+
+  const weatherBtns = document.querySelectorAll<HTMLButtonElement>('[data-weather]');
+  let chosen: string | null = null;
+  const syncWeather = () => weatherBtns.forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.weather || null) === chosen && chosen !== null)));
+
+  addEventListener('skychange', (e) => {
+    if (chosen !== null && chosen !== e.detail.weather) { chosen = e.detail.weather; syncWeather(); } // changed elsewhere (e.g. a secret word)
+    if (!dragging) input.value = String(e.detail.h);
+    out.textContent = fmt(e.detail.h);
   });
+  input.addEventListener('input', () => { dragging = true; send('sky:set', Number(input.value)); });
   input.addEventListener('change', () => (dragging = false));
-  document.getElementById('hour-reset')!.addEventListener('click', () => dispatchEvent(new CustomEvent('sky:set', { detail: null })));
+  document.getElementById('hour-reset')!.addEventListener('click', () => send('sky:set', null));
+
+  weatherBtns.forEach((b) => b.addEventListener('click', () => {
+    chosen = b.dataset.weather || null;
+    send('sky:weather', chosen);
+    syncWeather();
+  }));
+  document.getElementById('fw')!.addEventListener('click', () => send('sky:fireworks', 6));
+  document.getElementById('night')!.addEventListener('click', () => send('sky:set', 22.5));
 </script>

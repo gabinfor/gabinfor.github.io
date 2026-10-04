@@ -1,10 +1,12 @@
 ---
-interface Props { title: string; icon?: string; class?: string; tag?: 'section' | 'main' | 'aside' }
+import Icon from './Icon.astro';
+import type { IconName } from '../data/icons';
+interface Props { title: string; icon?: IconName; class?: string; tag?: 'section' | 'main' | 'aside' }
 const { title, icon, class: className, tag: Tag = 'section' } = Astro.props;
 ---
 <Tag class:list={['window', className]}>
   <div class="titlebar">
-    <span class="tb-title">{icon && <span aria-hidden="true">{icon} </span>}{title}</span>
+    <span class="tb-title">{icon && <Icon name={icon} size={14} />} {title}</span>
     <span class="tb-btns">
       <button type="button" class="tb-btn" data-win="min" aria-label="Minimize" aria-expanded="true">_</button>
       <button type="button" class="tb-btn" data-win="close" aria-label="Close">×</button>

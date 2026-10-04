@@ -117,3 +117,89 @@ hr { border: 0; border-top: 2px dashed var(--win-muted); margin: 2rem 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- pixel cursors ---------- */
+html { cursor: url('/cursors/arrow.svg') 0 0, auto; }
+a, button, summary, label, select, .btn, .b88, input[type='range'], [data-random] {
+  cursor: url('/cursors/hand.svg') 11 0, pointer;
+}
+p, li, dd, h1, h2, h3, blockquote, pre, code, textarea, input[type='text'] {
+  cursor: url('/cursors/text.svg') 7 16, text;
+}
+/* links inside text keep the hand */
+p a, li a, dd a, h1 a, h2 a, h3 a { cursor: url('/cursors/hand.svg') 11 0, pointer; }
+
+/* ---------- pressed toggle buttons ---------- */
+.btn[aria-pressed='true'] {
+  box-shadow: inset 2px 2px 0 var(--shadow), inset -2px -2px 0 var(--hilite);
+  transform: translate(1px, 1px); color: var(--accent);
+}
+[data-sound][aria-pressed='true'] .off, [data-sound][aria-pressed='false'] .on { display: none; }
+
+/* ---------- pixel range slider ---------- */
+input[type='range'] {
+  -webkit-appearance: none; appearance: none; background: transparent;
+  height: 24px; margin: 0;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 14px; background: var(--track, var(--face));
+  border: 2px solid var(--border); box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.35);
+}
+input[type='range']::-moz-range-track {
+  height: 10px; background: var(--track, var(--face));
+  border: 2px solid var(--border); box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.35);
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 24px; margin-top: -7px;
+  background: var(--face); border: 2px solid var(--border); border-radius: 0;
+  box-shadow: inset 2px 2px 0 var(--hilite), inset -2px -2px 0 var(--shadow);
+}
+input[type='range']::-moz-range-thumb {
+  width: 10px; height: 20px; background: var(--face); border: 2px solid var(--border); border-radius: 0;
+  box-shadow: inset 2px 2px 0 var(--hilite), inset -2px -2px 0 var(--shadow);
+}
+input[type='range']:active::-webkit-slider-thumb { box-shadow: inset 2px 2px 0 var(--shadow), inset -2px -2px 0 var(--hilite); }
+input[type='range']:active::-moz-range-thumb { box-shadow: inset 2px 2px 0 var(--shadow), inset -2px -2px 0 var(--hilite); }
+input[type='range']:focus-visible { outline: 2px dotted var(--accent); outline-offset: 2px; }
+
+/* ---------- sunken text fields ---------- */
+textarea, input[type='text'] {
+  font: 12px var(--mono); padding: 6px; border-radius: 0;
+  background: var(--win-bg); color: var(--win-ink); border: 2px solid var(--border);
+  box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.25);
+}
+
+/* ---------- chunky scrollbars ---------- */
+@supports not selector(::-webkit-scrollbar) {
+  html { scrollbar-color: var(--face) var(--win-bg); }
+}
+::-webkit-scrollbar { width: 16px; height: 16px; }
+::-webkit-scrollbar-track {
+  background: repeating-conic-gradient(var(--face) 0 25%, var(--win-bg) 0 50%) 0 0 / 4px 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--face); border: 2px solid var(--border);
+  box-shadow: inset 2px 2px 0 var(--hilite), inset -2px -2px 0 var(--shadow);
+}
+::-webkit-scrollbar-corner { background: var(--face); }
+
+/* ---------- toasts ---------- */
+.toast {
+  position: fixed; right: 16px; bottom: 16px; z-index: 900; width: min(300px, calc(100vw - 32px));
+  animation: toast-in 0.3s steps(4);
+}
+.toast .win-body { padding: 10px 12px; font-size: 13px; }
+.toast.out { animation: toast-out 0.3s steps(4) forwards; }
+@keyframes toast-in { from { transform: translateY(120%); } }
+@keyframes toast-out { to { transform: translateY(140%); } }
+
+/* ---------- under construction ---------- */
+.construction {
+  border: 2px solid var(--border); background: var(--face); color: var(--face-ink); text-align: center;
+  font: 600 14px/1.5 var(--pixel); margin: 16px 0;
+}
+.construction::before, .construction::after {
+  content: ''; display: block; height: 12px;
+  background: repeating-linear-gradient(45deg, #ffd000 0 8px, #111 8px 16px);
+}
+.construction p { margin: 10px 14px; }

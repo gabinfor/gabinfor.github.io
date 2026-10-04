@@ -4,6 +4,8 @@ import { getCollection } from 'astro:content';
 import Sky from '../components/Sky.astro';
 import Window from '../components/Window.astro';
 import Badge88 from '../components/Badge88.astro';
+import Icon from '../components/Icon.astro';
+import type { IconName } from '../data/icons';
 import { SITE } from '../data/site';
 import { BLOGROLL } from '../data/blogroll';
 
@@ -11,17 +13,21 @@ interface Props { title?: string; description?: string }
 const { title, description = SITE.tagline } = Astro.props;
 const fullTitle = title ? `${title} :: ${SITE.title}` : `${SITE.title}'s homepage`;
 const path = Astro.url.pathname;
-const nav = [
-  { href: '/', label: 'home', icon: '⌂' },
-  { href: '/blog/', label: 'writing', icon: '✎' },
-  { href: '/lab/', label: 'lab', icon: '⚗' },
-  { href: '/blogroll/', label: 'blogroll', icon: '☺' },
-  { href: '/rss.xml', label: 'rss', icon: '◉' },
+const nav: { href: string; label: string; icon: IconName }[] = [
+  { href: '/', label: 'home', icon: 'home' },
+  { href: '/blog/', label: 'writing', icon: 'pencil' },
+  { href: '/lab/', label: 'lab', icon: 'flask' },
+  { href: '/blogroll/', label: 'blogroll', icon: 'globe' },
+  { href: '/rss.xml', label: 'rss', icon: 'rss' },
 ];
 const isCurrent = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
 const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) => +b.data.date - +a.data.date)[0];
 ---
 <!doctype html>
+<!--
+  hey, view-source explorer! this site is hand-made with Astro.
+  psst: try the konami code, or type "rain" anywhere on the page.
+-->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -72,34 +78,37 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
         <span>
           ★ welcome, traveller! ★ the sky up there matches the time where you are ★
           {latest && <>newest post: <a href={`/blog/${latest.id}/`}>{latest.data.title}</a> ★ </>}
-          click things, they make noises ★ sign my blogroll ★
+          click things, they make noises ★ psst… try clicking the night sky ★
         </span>
       </div>
 
       <div class="layout">
-        <Window title="navigation" icon="▤" class="nav">
+        <Window title="navigation" icon="menu" class="nav">
           <nav class="nav-btns">
             {nav.map((n) => (
               <a class="btn" href={n.href} aria-current={isCurrent(n.href) ? 'page' : undefined}>
-                <span aria-hidden="true">{n.icon}</span>{n.label}
+                <Icon name={n.icon} />{n.label}
               </a>
             ))}
           </nav>
         </Window>
 
-        <Window title={`${new URL(Astro.site!).host}${path}`} icon="📄" class="main" tag="main">
+        <Window title={`${new URL(Astro.site!).host}${path}`} icon="page" class="main" tag="main">
           <slot />
         </Window>
 
-        <Window title="status" icon="☼" class="status">
+        <Window title="status" icon="sun" class="status">
           <dl class="stat">
             <dt>your time</dt><dd id="st-time">--:--</dd>
             <dt>sky</dt><dd id="st-sky">…</dd>
+            <dt>weather</dt><dd id="st-weather">…</dd>
             <dt>visits</dt><dd id="st-visits">1st</dd>
           </dl>
           <div class="stat-btns">
-            <button type="button" class="btn" id="st-lapse">⏩ time-lapse</button>
-            <button type="button" class="btn" data-sound aria-pressed="true">🔊 sound on</button>
+            <button type="button" class="btn" id="st-lapse"><Icon name="ffwd" />time-lapse</button>
+            <button type="button" class="btn" data-sound aria-pressed="true">
+              <span class="on"><Icon name="soundOn" /> sound on</span><span class="off"><Icon name="soundOff" /> sound off</span>
+            </button>
           </div>
         </Window>
       </div>
@@ -112,7 +121,9 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
         <div class="foot-row window">
           <span>© {new Date().getFullYear()} {SITE.author} · hand-made, no trackers</span>
           <span class="foot-links">
-            <button type="button" class="btn" data-random={JSON.stringify(BLOGROLL.map((b) => b.url))}>🎲 random cool site</button>
+            {BLOGROLL.length > 0 && (
+              <button type="button" class="btn" data-random={JSON.stringify(BLOGROLL.map((b) => b.url))}><Icon name="dice" />random cool site</button>
+            )}
             <a href="/blogroll.opml">opml</a>
             <a href={SITE.github}>github</a>
           </span>
@@ -125,13 +136,15 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
 
       const pad = (n: number) => String(n).padStart(2, '0');
       const timeEl = document.getElementById('st-time')!, skyEl = document.getElementById('st-sky')!;
+      const weatherEl = document.getElementById('st-weather')!;
       const show = (h: number) => {
         const mins = Math.floor(h * 60);
         timeEl.textContent = `${pad(Math.floor(mins / 60) % 24)}:${pad(mins % 60)}`;
         skyEl.textContent = window.__skyMath(h).label;
       };
-      addEventListener('skychange', (e) => show(e.detail.h));
+      addEventListener('skychange', (e) => { show(e.detail.h); weatherEl.textContent = e.detail.weather; });
       show(window.__skyOverride ?? window.__skyHour()); // don't wait for the first frame
+      weatherEl.textContent = document.documentElement.dataset.weather ?? '…';
       document.getElementById('st-lapse')!.addEventListener('click', () => dispatchEvent(new Event('sky:timelapse')));
 
       // A personal visit counter, kept only in this browser.

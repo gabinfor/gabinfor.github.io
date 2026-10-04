@@ -14,7 +14,7 @@ const { height = '420px', hue = 0, caption, pixel = 3 } = Astro.props;
 <style>
   .gpu { margin: 2rem 0; position: relative; }
   canvas {
-    width: 100%; height: var(--h); touch-action: none; cursor: crosshair; image-rendering: pixelated;
+    width: 100%; height: var(--h); touch-action: none; cursor: url('/cursors/cross.svg') 11 11, crosshair; image-rendering: pixelated;
     background: var(--sunken); border: 2px solid var(--border); box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.5);
   }
   .gpu.no-gpu canvas {
