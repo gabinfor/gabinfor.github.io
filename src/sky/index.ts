@@ -7,6 +7,7 @@ import { type Weather, WeatherFx, forecast, isWeather } from './weather';
 import { Fireworks } from './fireworks';
 import { type MobKind, Minecraft } from './mc';
 import { UpperSky } from './upper';
+import { type CloudLook, cumulus, toRuns } from './clouds';
 import { blip, noise, toast } from '../scripts/clicky';
 import './eggs';
 
@@ -24,7 +25,6 @@ let lights: { sun?: { x: number; y: number; r: number; c: RGB; vis: number }; mo
 let W = 1, H = 1;
 
 type Star = { x: number; y: number; b: number; tw: boolean; big: boolean; c: string };
-type CloudLook = { w: number; h: number; px: [number, number, number][]; runs: [number, number, number, number][] };
 type ShapeName = keyof typeof CLOUD_SHAPES;
 type Cloud = CloudLook & {
   x: number; y: number; speed: number; th: number; shape?: ShapeName; normal?: CloudLook;
@@ -72,40 +72,23 @@ const fireworks = new Fireworks();
 // ---------- layout ----------
 
 function makeCloud(r: () => number, th: number, now: number): Cloud {
+  // fair-weather puffs, plus wider, taller ones that only show up when it's cloudy
   const big = th > 0.45;
-  const w = big ? 30 + Math.floor(r() * 34) : 16 + Math.floor(r() * 16);
-  const h = big ? 9 : 11, baseH = big ? 4 : 3;
-  const grid = new Uint8Array(w * h);
-  const set = (x: number, y: number) => { if (x >= 0 && x < w && y >= 0 && y < h) grid[y * w + x] = 1; };
-  for (let y = h - baseH; y < h; y++) for (let x = y === h - 1 ? 3 : 2; x < w - (y === h - 1 ? 3 : 2); x++) set(x, y);
-  const puffs = big ? 4 + Math.floor(r() * 4) : 2 + Math.floor(r() * 3);
-  for (let i = 0; i < puffs; i++) {
-    const rad = big ? 2 + Math.floor(r() * 3) : 3 + Math.floor(r() * 3);
-    const cx = Math.round(rad + 1 + r() * (w - 2 * rad - 2)), cy = h - baseH + 1 - Math.floor(r() * 2);
-    for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) if (dx * dx + dy * dy <= rad * rad + 1) set(cx + dx, cy + dy);
-  }
+  const w = big ? 34 + Math.floor(r() * 36) : 18 + Math.floor(r() * 16);
+  const h = big ? 13 + Math.floor(r() * 4) : 11 + Math.floor(r() * 3);
   const span = W + 2 * w, speed = big ? 0.3 + r() * 0.5 : 0.5 + r() * 1.0;
-  return { ...shadeCloud(grid, w, h, baseH), x: ((r() * span + now * speed) % span) - w, y: big ? 0.04 + r() * 0.26 : 0.08 + r() * 0.32, speed, th };
+  return { ...cumulus(w, h, r() * 1000, big ? 0.35 : 0), x: ((r() * span + now * speed) % span) - w, y: big ? 0.04 + r() * 0.26 : 0.08 + r() * 0.32, speed, th };
 }
 
-/** Three tones: lit top edge, body, shaded underside (dithered into the base). */
+/** Shapes and blocky clouds: lit top edge, body, shaded underside, on the same 5-tone scale. */
 function shadeCloud(grid: Uint8Array, w: number, h: number, baseH: number): CloudLook {
-  const px: Cloud['px'] = [], runs: Cloud['runs'] = [];
-  for (let y = 0; y < h; y++) {
-    let run: [number, number, number, number] | null = null;
-    for (let x = 0; x <= w; x++) {
-      let tone = -1;
-      if (x < w && grid[y * w + x]) {
-        const up = y > 0 && grid[(y - 1) * w + x], down = y < h - 1 && grid[(y + 1) * w + x];
-        tone = !up ? 0 : !down || y >= h - 1 ? 2 : y >= h - baseH && dither(x, y) < 0.5 ? 2 : 1;
-        px.push([x, y, tone]);
-      }
-      if (run && run[3] !== tone) { runs.push(run); run = null; }
-      if (tone >= 0 && !run) run = [x, y, 0, tone];
-      if (run) run[2]++;
-    }
+  const px: CloudLook['px'] = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!grid[y * w + x]) continue;
+    const up = y > 0 && grid[(y - 1) * w + x], down = y < h - 1 && grid[(y + 1) * w + x];
+    px.push([x, y, !up ? 0 : !down || y >= h - 1 ? 3 : y >= h - baseH && dither(x, y) < 0.5 ? 3 : 1]);
   }
-  return { w, h, px, runs };
+  return toRuns(w, h, px);
 }
 
 function shapeLook(name: ShapeName | 'catAwake'): CloudLook {
@@ -227,26 +210,28 @@ function layout() {
 const gradCanvas = document.createElement('canvas');
 let gradKey = '';
 function drawGradient(top: RGB, bottom: RGB, zenith: RGB, pan: number) {
-  const key = `${top}|${bottom}|${zenith}|${pan}|${W}x${H}`;
+  // Built once per colour change, tall enough for the whole camera range (world y from
+  // -PAN to H), then just slid into place, so panning costs nothing.
+  const key = `${top}|${bottom}|${zenith}|${PAN}|${W}x${H}`;
   if (key !== gradKey) {
     const N = 12, cols = Array.from({ length: N }, (_, i) => mix(top, bottom, i / (N - 1)));
     // above the normal view the sky deepens toward the zenith
     const M = 10, up = Array.from({ length: M }, (_, i) => mix(top, zenith, i / (M - 1)));
-    const img = g.createImageData(W, H), d = img.data, span = H * 0.8;
-    for (let y = 0; y < H; y++) {
-      const yw = y - pan, band = yw >= 0 ? cols : up;
+    const GH = PAN + H, img = g.createImageData(W, GH), d = img.data, span = H * 0.8;
+    for (let yy = 0; yy < GH; yy++) {
+      const yw = yy - PAN, band = yw >= 0 ? cols : up;
       const v = yw >= 0 ? Math.min(1, yw / span) * (N - 1) : Math.min(1, -yw / PAN) * (M - 1);
       const b0 = Math.floor(v), f = v - b0, b1 = Math.min(band.length - 1, b0 + 1);
       for (let x = 0; x < W; x++) {
-        const c = f > dither(x, y) ? band[b1] : band[b0], i = (y * W + x) * 4;
+        const c = f > dither(x, yy) ? band[b1] : band[b0], i = (yy * W + x) * 4;
         d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
       }
     }
-    gradCanvas.width = W; gradCanvas.height = H;
+    gradCanvas.width = W; gradCanvas.height = GH;
     gradCanvas.getContext('2d')!.putImageData(img, 0, 0);
     gradKey = key;
   }
-  g.drawImage(gradCanvas, 0, 0);
+  g.drawImage(gradCanvas, 0, pan - PAN);
 }
 
 const moonPhase = () => {
@@ -365,6 +350,7 @@ function drawBloom(m: SkyMath, t: number, pan: number) {
   }
   fireworks.draw(bg);
   drawMeteors(bg);
+  upper.drawBloom(bg, t, lights.stars, pan > 0, m.n);
   // Sky lights are behind the terrain: punch out its silhouette so nothing glows through a mountain.
   bg.globalCompositeOperation = 'destination-out';
   bg.fillStyle = '#000';
@@ -474,10 +460,18 @@ function draw(h: number, t: number) {
   lights.stars = sa;
   const gray = mix([150, 154, 168], [70, 72, 90], clamp((wx.gloom - 0.3) / 0.45));
   const hi = mix(mix(mix([255, 255, 255], bottom, 0.25), gray, wx.gloom * 0.85), [50, 54, 96], m.n * 0.85);
+  // five cloud tones (highlight .. base shadow); a low sun warms the highlights
+  const lowSun = m.sunP >= 0 && m.sunP <= 1 ? 1 - smooth(0, 0.4, m.e) : 0;
+  const cloudCols = [
+    rgb(mix(mix(hi, [255, 255, 255], 0.6 * (1 - m.n)), [255, 170, 120], lowSun * 0.45)),
+    rgb(mix(mix(hi, [255, 255, 255], 0.15 * (1 - m.n)), [255, 160, 130], lowSun * 0.25)),
+    rgb(mix(hi, top, 0.16)),
+    rgb(mix(hi, top, 0.34)),
+    rgb(mix(mix(hi, top, 0.5), [70, 74, 120], 0.2)),
+  ];
   if (pan > 0) { // the upper sky only shows when looking up
-    const cols = [rgb(mix(hi, [255, 255, 255], 0.5)), rgb(hi), rgb(mix(hi, zenith, 0.22)), rgb(mix(hi, zenith, 0.45))];
     // the tall cumulus show by day, and at night only when it's actually cloudy (so the stars stay clear)
-    upper.draw(g, sa, cols, 0.5 * (1 - m.n * 0.75) * (1 - wx.cover * 0.6), m.n < 0.6 || wx.cover > 0.5);
+    upper.draw(g, sa, cloudCols, 0.5 * (1 - m.n * 0.75) * (1 - wx.cover * 0.6), m.n < 0.6 || wx.cover > 0.5);
   }
   if (sa > 0.02) {
     const px = new Pixels();
@@ -493,7 +487,8 @@ function draw(h: number, t: number) {
   if (m.sunP >= 0 && m.sunP <= 1) drawSun(m, horizon, R, wx.cover, bottom, t);
   else drawMoon(m, horizon, R, wx.cover, top);
 
-  drawClouds(wx.cover, [rgb(hi), rgb(mix(hi, top, 0.18)), rgb(mix(hi, top, 0.42))], t);
+  upper.drawPlane(g, t, m.n); // above the low clouds' level, so they can drift in front
+  drawClouds(wx.cover, cloudCols, t);
   drawBubblesAndHearts(t, m.n);
 
   fireworks.draw(g);
@@ -586,7 +581,7 @@ function update(dt: number, t: number, m: SkyMath) {
   // the camera eases toward where you're looking
   cam = still ? look : cam + (look - cam) * Math.min(1, dt * 5);
   if (Math.abs(look - cam) < 0.002) cam = look;
-  upper.update(dt, wind, m.n < 0.4 && weather.p.rain < 0.1, cam > 0.4);
+  upper.update(dt, wind, weather.p.rain < 0.1 && weather.p.cover < 0.8, m.n < 0.4, panPx(), t);
   for (const s of meteors) { s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; }
   meteors = meteors.filter((s) => s.life > 0);
 }
@@ -650,8 +645,12 @@ function tick(now: number) {
 /** Move the page with the camera: it slides down and fades as you look up. */
 const lookedUp = new Set<string>();
 function applyCamera(h: number) {
-  const page = document.querySelector<HTMLElement>('.page'), px = panPx() * S, root = document.documentElement;
-  if (page) { page.style.transform = px ? `translateY(${px}px)` : ''; page.style.opacity = px ? String(1 - cam * 0.92) : ''; }
+  // The canvas moves in whole sky pixels; nudge it by the leftover fraction so the pan
+  // glides instead of stepping 4 screen pixels at a time. The page moves by the exact amount.
+  const page = document.querySelector<HTMLElement>('.page'), exact = cam * PAN * S, root = document.documentElement;
+  const sky = document.querySelector<HTMLElement>('.sky');
+  if (sky) sky.style.transform = cam ? `translateY(${(cam * PAN - panPx()) * S}px)` : '';
+  if (page) { page.style.transform = exact ? `translateY(${exact}px)` : ''; page.style.opacity = exact ? String(1 - cam * 0.92) : ''; }
   root.classList.toggle('skyview', cam > 0.3);
   root.style.overflow = cam > 0.001 ? 'hidden' : '';
   if (cam > 0.95) {

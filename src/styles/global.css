@@ -36,7 +36,7 @@ html[data-phase='night'] {
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; } /* no layout jump when the sky view hides the scrollbar */
 body {
   margin: 0; min-height: 100vh; color: var(--win-ink);
   font: 14px/1.6 var(--body);

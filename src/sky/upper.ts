@@ -2,6 +2,7 @@
 // the Milky Way and constellations at night; tall cumulus, cirrus and the odd plane by day.
 // World coordinates: the normal view is y in [0, H]; this lives in y in [-pan, ~0.15H].
 import { Pixels, dither, mix, rgb, smooth } from './palette';
+import { cumulonimbus } from './clouds';
 
 const h2 = (x: number, y: number, s: number) => { const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return v - Math.floor(v); };
 function vn2(x: number, y: number, s: number) {
@@ -25,42 +26,25 @@ export class UpperSky {
   private night: HTMLCanvasElement | null = null;
   private clouds: BigCloud[] = [];
   private wisps: Wisp[] = [];
-  private plane: { x: number; y: number; dir: 1 | -1; trail: [number, number, number][]; emit: number } | null = null;
-  private nextPlane = 6;
+  private plane: { x: number; y: number; dir: 1 | -1; trail: [number, number, number][]; emit: number; t0: number } | null = null;
+  private nextPlane = 20 + Math.random() * 30;
+  /** The brightest Milky Way stars (world coords), which also glow in the bloom layer. */
+  private brightStars: [number, number, string][] = [];
 
   /** Called on layout; the heavy textures are built lazily, the first time you look up. */
   reset(W: number, H: number, pan: number) {
     this.W = W; this.H = H; this.pan = pan;
-    this.night = null; this.clouds = []; this.wisps = []; this.plane = null;
+    this.night = null; this.clouds = []; this.wisps = []; this.plane = null; this.brightStars = [];
   }
 
   private build() {
     const { W, pan } = this;
     this.buildNight();
-    // tall cumulus: many puffs on a flat base, shaded in four tones (lit from the upper left)
-    this.clouds = Array.from({ length: Math.max(3, Math.round(W / 140)) }, (_, i) => {
-      const w = 60 + Math.floor(h2(i, 1, 3) * 60), h = 22 + Math.floor(h2(i, 2, 3) * 10);
-      const grid = new Uint8Array(w * h);
-      const set = (x: number, y: number) => { if (x >= 0 && x < w && y >= 0 && y < h) grid[y * w + x] = 1; };
-      for (let y = h - 5; y < h; y++) for (let x = 3; x < w - 3; x++) set(x, y);
-      const puffs = 6 + Math.floor(h2(i, 3, 3) * 5);
-      for (let p = 0; p < puffs; p++) {
-        const r = 4 + Math.floor(h2(i, 10 + p, 3) * 7), cx = r + Math.floor(h2(i, 30 + p, 3) * (w - 2 * r));
-        // puffs stack higher toward the middle, building a towering cumulus
-        const cy = Math.round(h - 5 - r * 0.5 - h2(i, 50 + p, 3) * (h - 5 - r) * (1 - Math.abs(cx / w - 0.5) * 1.6));
-        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r) set(cx + dx, cy + dy);
-      }
-      const px: BigCloud['px'] = [];
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        if (!grid[y * w + x]) continue;
-        const edgeTop = y === 0 || !grid[(y - 1) * w + x], edgeLeft = x === 0 || !grid[y * w + x - 1];
-        const below = y + 1 < h && grid[(y + 1) * w + x], nearTop = y > 1 && !grid[(y - 2) * w + x];
-        const v = (y / h) * 0.85 + (x / w) * 0.3 + (dither(x, y) - 0.5) * 0.12;
-        // sunlit tops and left sides, a cool grey underside
-        const tone = edgeTop || nearTop || (edgeLeft && v < 0.6) ? 0 : !below || y >= h - 2 ? 3 : v < 0.62 ? 1 : v < 0.92 ? 2 : 3;
-        px.push([x, y, tone]);
-      }
-      return { x: h2(i, 4, 3) * (W + w) - w, y: -pan * (0.3 + h2(i, 5, 3) * 0.55), w, speed: 0.3 + h2(i, 6, 3) * 0.4, px };
+    // towering cumulonimbus: big storm columns with anvil tops
+    this.clouds = Array.from({ length: Math.max(2, Math.round(W / 220)) }, (_, i) => {
+      const w = 120 + Math.floor(h2(i, 1, 3) * 60), h = Math.min(Math.round(pan * 0.7), 58 + Math.floor(h2(i, 2, 3) * 22));
+      const look = cumulonimbus(w, h, h2(i, 3, 3) * 1000);
+      return { x: (i / Math.max(2, Math.round(W / 220))) * W + h2(i, 4, 3) * 60 - 30, y: -pan * (0.2 + h2(i, 5, 3) * 0.15) - h * 0.55, w, speed: 0.25 + h2(i, 6, 3) * 0.3, px: look.px };
     });
     // cirrus: long, thin, slanted wisps
     this.wisps = Array.from({ length: Math.max(4, Math.round(W / 70)) }, (_, i) => {
@@ -74,37 +58,52 @@ export class UpperSky {
     });
   }
 
-  /** The Milky Way: a tilted glowing band with dust lanes, nebula tints and dense stars, plus two constellations. */
+  /**
+   * The Milky Way, after long-exposure photos: a bluish-violet haze along a tilted band, a
+   * warm, bright core bulge, blue-white star clouds, a dark rift splitting it, pink and
+   * teal nebulae, and dense stars coloured by temperature (blue-white to orange).
+   */
   private buildNight() {
     const { W, H, pan } = this, TH = pan + Math.round(H * 0.15);
     const c = document.createElement('canvas');
     c.width = W; c.height = TH;
     const g = c.getContext('2d')!;
-    const glowPx = new Pixels(), corePx = new Pixels(), nebPx = new Pixels(), starPx = new Pixels();
-    const hw = H * 0.17;
+    const haze = new Pixels(), clouds = new Pixels(), glowCore = new Pixels(), neb = new Pixels(), starPx = new Pixels();
+    const hw = H * 0.18, xc = W * 0.32;
+    const STAR_COLS = ['#9bb0ff', '#cad7ff', '#f8f7ff', '#fff4ea', '#ffe1b8', '#ffc08a'];
+    this.brightStars = [];
     for (let yy = 0; yy < TH; yy++) {
       const yw = yy - pan, fade = smooth(H * 0.12, -H * 0.05, yw);
       for (let x = 0; x < W; x++) {
-        const yc = -pan * 0.55 + (x - W * 0.5) * 0.42, d = (yw - yc) / hw, base = Math.exp(-d * d * 2) * fade;
+        const yc = -pan * 0.55 + (x - W * 0.5) * 0.42, d = (yw - yc) / hw;
+        const base = Math.exp(-d * d * 1.8) * fade;
+        const core = Math.exp(-(((x - xc) / (W * 0.2)) ** 2)) * Math.exp(-d * d * 1.1) * fade; // the galactic bulge
         const n = fbm(x / 26, yw / 26, 3);
-        let glow = base * (0.45 + 0.75 * n);
-        const lane = Math.exp(-(((yw - (yc + hw * 0.12 * Math.sin(x / 37))) / (hw * 0.16)) ** 2)) * smooth(0.35, 0.75, fbm(x / 18, yw / 18, 7));
-        glow -= lane * 0.55 * base;
-        const th = dither(x, yy);
-        // colours close to the night sky, so the dithering reads as a soft glow rather than a checkerboard
-        if (glow > 0.05 && th < glow * 0.7) glowPx.add(rgb(mix([28, 32, 78], [70, 62, 112], n)), x, yy);
-        if (glow > 0.4 && th < (glow - 0.4) * 1.2) corePx.add(rgb(mix([96, 100, 158], [150, 132, 182], n)), x, yy);
-        if (glow > 0.75 && th < (glow - 0.75) * 1.5) corePx.add('rgb(196,192,226)', x, yy);
-        const neb = smooth(0.62, 0.8, fbm(x / 40, yw / 40, 11)) * base;
-        if (neb > 0.02 && th < neb * 0.4) nebPx.add(fbm(x / 60, yw / 60, 13) > 0.5 ? 'rgb(120,64,112)' : 'rgb(52,100,120)', x, yy);
-        if (h2(x, yy, 21) < 0.003 + base * 0.035) {
-          const b = h2(x, yy, 22), col = b > 0.66 ? '#fff6dc' : b > 0.33 ? '#dfe8ff' : '#ffffff';
-          starPx.add(col, x, yy);
-          if (b > 0.97) { starPx.add(col, x - 1, yy); starPx.add(col, x + 1, yy); starPx.add(col, x, yy - 1); starPx.add(col, x, yy + 1); }
+        // the great rift: a wandering dark lane down the middle of the band
+        const rift = Math.exp(-(((yw - (yc + hw * 0.1 * Math.sin(x / 33) + hw * 0.05 * Math.sin(x / 11))) / (hw * 0.17)) ** 2))
+          * smooth(0.3, 0.7, fbm(x / 16, yw / 16, 7));
+        const glow = Math.max(0, base * (0.4 + 0.8 * n) + core * (0.25 + 0.4 * n) - rift * 0.85 * (base + core * 0.6));
+        const th = dither(x, yy), warm = Math.min(1, core * 1.6);
+        if (glow > 0.05 && th < glow * 0.8) haze.add(rgb(mix(mix([34, 40, 98], [86, 76, 146], n), [120, 92, 80], warm * 0.6)), x, yy);
+        if (glow > 0.32 && th < (glow - 0.32) * 1.4) clouds.add(rgb(mix(mix([124, 136, 210], [196, 182, 226], n), [240, 205, 150], warm)), x, yy);
+        if (glow > 0.7 && th < (glow - 0.7) * 1.8) glowCore.add(rgb(mix([236, 232, 255], [255, 236, 196], warm)), x, yy);
+        // emission (pink) and reflection (teal) nebulae, mostly near the core
+        const nb = smooth(0.58, 0.76, fbm(x / 34, yw / 34, 11)) * (base * 0.6 + core);
+        if (nb > 0.03 && th < nb * 0.6) {
+          const k = fbm(x / 50, yw / 50, 13);
+          neb.add(k > 0.58 ? 'rgb(236,84,146)' : k > 0.42 ? 'rgb(246,150,86)' : 'rgb(72,186,214)', x, yy);
+        }
+        if (h2(x, yy, 21) < 0.004 + base * 0.05 + core * 0.04) {
+          const b = h2(x, yy, 22), col = STAR_COLS[Math.floor(h2(x, yy, 23) * STAR_COLS.length)];
+          if (b > 0.985) { // a bright star with diffraction spikes
+            starPx.add(col, x - 2, yy, 5, 1); starPx.add(col, x, yy - 2, 1, 5); starPx.add('#ffffff', x, yy);
+            this.brightStars.push([x, yw, col]);
+          } else if (b > 0.94) { starPx.add(col, x - 1, yy, 3, 1); starPx.add(col, x, yy - 1, 1, 3); }
+          else starPx.add(b > 0.6 ? col : 'rgba(220,226,255,0.75)', x, yy);
         }
       }
     }
-    glowPx.flush(g); nebPx.flush(g); corePx.flush(g); starPx.flush(g);
+    haze.flush(g); clouds.flush(g); neb.flush(g); glowCore.flush(g); starPx.flush(g);
     // constellations: faint dotted lines and bright stars
     const s = Math.max(6, Math.round(H * 0.05)), lines = new Pixels(), bright = new Pixels();
     const draw = (pts: [number, number][], links: [number, number][], ox: number, oy: number) => {
@@ -121,28 +120,29 @@ export class UpperSky {
     this.night = c;
   }
 
-  update(dt: number, wind: number, day: boolean, looking: boolean) {
-    if (!this.night) return;
+  /** `pan`: how far the camera is looking up, in sky pixels (planes fly where you're looking). */
+  update(dt: number, wind: number, fair: boolean, day: boolean, pan: number, t: number) {
     const W = this.W;
     for (const c of this.clouds) { c.x += c.speed * wind * dt; if (c.x > W + 4) c.x = -c.w; }
     for (const w of this.wisps) { w.x += w.speed * dt; if (w.x > W + 4) w.x = -w.w; }
-    // the odd plane, drawing a contrail, on fair days while you're looking up
-    if (!this.plane && day && looking && (this.nextPlane -= dt) <= 0) {
+    // now and then a plane crosses: a contrail by day, blinking lights at night
+    if (!this.plane && fair && (this.nextPlane -= dt) <= 0) {
       const dir = Math.random() < 0.5 ? 1 : -1;
-      this.plane = { x: dir > 0 ? -6 : W + 6, y: -this.pan * (0.45 + Math.random() * 0.35), dir, trail: [], emit: 0 };
-      this.nextPlane = 25 + Math.random() * 30;
+      const y = pan > this.pan * 0.4 ? -pan + this.H * (0.1 + Math.random() * 0.3) : this.H * (0.06 + Math.random() * 0.22);
+      this.plane = { x: dir > 0 ? -6 : W + 6, y, dir, trail: [], emit: 0, t0: t };
+      this.nextPlane = 35 + Math.random() * 45;
     }
     const p = this.plane;
     if (p) {
       p.x += p.dir * 14 * dt;
-      if ((p.emit -= dt) <= 0) { p.emit = 0.08; p.trail.push([p.x - p.dir * 3, p.y + 1, 0]); }
+      if (day && (p.emit -= dt) <= 0) { p.emit = 0.08; p.trail.push([p.x - p.dir * 3, p.y + 1, 0]); }
       for (const tr of p.trail) tr[2] += dt;
       p.trail = p.trail.filter((tr) => tr[2] < 9);
       if ((p.x < -40 || p.x > W + 40) && !p.trail.length) this.plane = null;
     }
   }
 
-  /** Draw what's above the normal view. `cols`: cloud tones (highlight, light, mid, shadow). */
+  /** Draw what's above the normal view. `cols`: the five cloud tones. */
   draw(g: CanvasRenderingContext2D, nightAlpha: number, cols: string[], wispAlpha: number, showClouds: boolean) {
     if (!this.night) this.build();
     if (nightAlpha > 0.02) {
@@ -158,18 +158,39 @@ export class UpperSky {
       for (const [x, y, tone] of c.px) px.add(cols[tone], Math.round(c.x) + x, Math.round(c.y) + y);
       px.flush(g);
     }
+  }
+
+  /** The plane: silver with a contrail by day; at night a dark shape with red/green lights and a white strobe. */
+  drawPlane(g: CanvasRenderingContext2D, t: number, n: number) {
     const p = this.plane;
-    if (p) {
-      const trail = new Pixels();
-      for (const [x, y, age] of p.trail) {
-        const a = 1 - age / 9;
-        if (dither(x | 0, y | 0) < a) trail.add('rgba(255,255,255,0.8)', x | 0, y | 0, 1, age > 2.5 ? 2 : 1);
-      }
-      trail.flush(g);
-      g.fillStyle = '#e8e8ee';
-      const x = Math.round(p.x), y = Math.round(p.y);
-      g.fillRect(x - 2, y, 5, 1); g.fillRect(x - p.dir * 2, y - 1, 1, 1); g.fillRect(x, y + 1, 1, 1);
+    if (!p) return;
+    const trail = new Pixels();
+    for (const [x, y, age] of p.trail) {
+      const a = (1 - age / 9) * (1 - n);
+      if (dither(x | 0, y | 0) < a) trail.add('rgba(255,255,255,0.8)', x | 0, y | 0, 1, age > 2.5 ? 2 : 1);
     }
+    trail.flush(g);
+    const x = Math.round(p.x), y = Math.round(p.y);
+    g.fillStyle = n > 0.5 ? '#1c1e2e' : '#e8e8ee';
+    g.fillRect(x - 2, y, 5, 1); g.fillRect(x - p.dir * 2, y - 1, 1, 1); g.fillRect(x, y + 1, 1, 1);
+    if (n > 0.5) this.lights(g, t);
+  }
+
+  private lights(g: CanvasRenderingContext2D, t: number) {
+    const p = this.plane!, x = Math.round(p.x), y = Math.round(p.y), k = t - p.t0;
+    if (Math.floor(k * 1.2) % 2 === 0) { g.fillStyle = '#ff3b3b'; g.fillRect(x - p.dir * 2, y, 1, 1); }
+    if (Math.floor(k * 1.2 + 1) % 2 === 0) { g.fillStyle = '#3bff6a'; g.fillRect(x + p.dir * 2, y, 1, 1); }
+    if (k % 1.3 < 0.1) { g.fillStyle = '#ffffff'; g.fillRect(x, y - 1, 1, 1); }
+  }
+
+  /** Bloom: the Milky Way's glow and its brightest stars (when looking up), and plane lights at night. */
+  drawBloom(bg: CanvasRenderingContext2D, t: number, nightAlpha: number, looking: boolean, n: number) {
+    if (looking && this.night && nightAlpha > 0.05) {
+      bg.globalAlpha = nightAlpha * 0.45;
+      bg.drawImage(this.night, 0, -this.pan);
+      bg.globalAlpha = 1;
+      for (const [x, y, col] of this.brightStars) { bg.fillStyle = col; bg.fillRect(x - 1, y - 1, 3, 3); }
+    }
+    if (this.plane && n > 0.5) this.lights(bg, t);
   }
 }
-
