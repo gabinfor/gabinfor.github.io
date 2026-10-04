@@ -116,8 +116,7 @@ export class WeatherFx {
     this.boltLife = 0.22;
     this.flash = 1;
     this.nextStrike = 3 + r() * 9;
-    noise({ dur: 0.25, freq: 1400, type: 'bandpass', gain: 0.06 });
-    noise({ dur: 1.8, freq: 160, gain: 0.3, delay: 0.3 + r() });
+    noise({ dur: 1.8, freq: 160, gain: 0.3, delay: 0.3 + r() }); // distant rumble only
   }
 
   /** Draw the rain and snow belonging to one depth layer. */

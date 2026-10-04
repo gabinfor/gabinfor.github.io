@@ -86,15 +86,20 @@ const bloomIsOn = () => document.documentElement.dataset.bloom !== 'off';
 function syncBloomButton() {
   document.querySelectorAll<HTMLButtonElement>('[data-bloom-toggle]').forEach((b) => b.setAttribute('aria-pressed', String(bloomIsOn())));
 }
+const glassIsOn = () => document.documentElement.dataset.glass !== 'off';
+function syncGlassButton() {
+  document.querySelectorAll<HTMLButtonElement>('[data-glass-toggle]').forEach((b) => b.setAttribute('aria-pressed', String(glassIsOn())));
+}
 
 addEventListener('pointerdown', (e) => {
-  const el = (e.target as Element).closest('a, button, summary, input, label');
+  const el = e.target instanceof Element ? e.target.closest('a, button, summary, input, label') : null;
   if (el) blip(el.matches('a') ? 990 : 780);
   if (!still) sparkle(e.clientX, e.clientY);
 });
 
 addEventListener('click', (e) => {
-  const el = e.target as Element;
+  if (!(e.target instanceof Element)) return;
+  const el = e.target;
   const win = el.closest<HTMLButtonElement>('[data-win]');
   if (win) {
     const w = win.closest('.window')!;
@@ -112,13 +117,22 @@ addEventListener('click', (e) => {
     store.set('sound', soundOn ? 'on' : 'off');
     syncSoundButton();
 syncBloomButton();
+syncGlassButton();
     blip(1200);
+  }
+  if (el.closest('[data-glass-toggle]')) {
+    const on = !glassIsOn();
+    if (on) delete document.documentElement.dataset.glass; else document.documentElement.dataset.glass = 'off';
+    store.set('glass', on ? 'on' : 'off');
+    syncGlassButton();
+    blip(on ? 1200 : 600);
   }
   if (el.closest('[data-bloom-toggle]')) {
     const on = !bloomIsOn();
     if (on) delete document.documentElement.dataset.bloom; else document.documentElement.dataset.bloom = 'off';
     store.set('bloom', on ? 'on' : 'off');
     syncBloomButton();
+syncGlassButton();
     dispatchEvent(new Event('sky:bloom'));
     blip(on ? 1400 : 700);
   }
@@ -131,3 +145,4 @@ syncBloomButton();
 
 syncSoundButton();
 syncBloomButton();
+syncGlassButton();

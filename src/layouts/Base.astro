@@ -61,7 +61,10 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
           var label = h < 5 ? 'late night' : h < 7.5 ? 'dawn' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 19.5 ? 'golden hour' : h < 21 ? 'dusk' : 'night';
           return { sunP: sunP, moonP: moonP, e: e, n: n, phase: phase, label: label };
         };
-        try { if (localStorage.getItem('bloom') === 'off') document.documentElement.dataset.bloom = 'off'; } catch (e) {}
+        try {
+          if (localStorage.getItem('bloom') === 'off') document.documentElement.dataset.bloom = 'off';
+          if (localStorage.getItem('glass') === 'off') document.documentElement.dataset.glass = 'off';
+        } catch (e) {}
         var h = window.__skyOverride !== null ? window.__skyOverride : window.__skyHour();
         document.documentElement.dataset.phase = window.__skyMath(h).phase;
       })();
@@ -109,6 +112,9 @@ const latest = (await getCollection('blog', (p) => !p.data.draft)).sort((a, b) =
             <button type="button" class="btn" id="st-lapse"><Icon name="ffwd" />time-lapse</button>
             <button type="button" class="btn" data-sound aria-pressed="true">
               <span class="on"><Icon name="soundOn" /> sound on</span><span class="off"><Icon name="soundOff" /> sound off</span>
+            </button>
+            <button type="button" class="btn" data-glass-toggle aria-pressed="true">
+              <span class="on"><Icon name="glass" /> see-through</span><span class="off"><Icon name="glass" /> solid</span>
             </button>
             <button type="button" class="btn" data-bloom-toggle aria-pressed="true">
               <span class="on"><Icon name="firework" /> bloom on</span><span class="off"><Icon name="firework" /> bloom off</span>

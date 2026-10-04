@@ -64,6 +64,7 @@ h3 { font-size: 17px; margin: 1.4em 0 0.4em; }
 /* ---------- windows ---------- */
 .window {
   background: var(--win-bg);
+  transition: background-color 0.2s steps(3);
   border: 2px solid var(--border);
   box-shadow: 5px 5px 0 rgb(0 0 0 / 0.35);
 }
@@ -77,11 +78,17 @@ h3 { font-size: 17px; margin: 1.4em 0 0.4em; }
 }
 .tb-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-btns { display: flex; gap: 3px; flex: none; }
-.tb-btn { width: 18px; height: 16px; padding: 0; font: 600 11px/1 var(--pixel); }
+/* more specific than the shared .btn rule below, so its padding doesn't stretch these */
+.titlebar .tb-btn { width: 18px; height: 16px; padding: 0; }
+.tb-btn .icon { vertical-align: 0; }
 .win-body { padding: 14px 16px; }
 .window.collapsed .win-body { display: none; }
 .window.shake { animation: shake 0.35s steps(4); }
 @keyframes shake { 25% { transform: translateX(-4px); } 50% { transform: translateX(4px); } 75% { transform: translateX(-2px); } }
+
+/* See-through windows (toggle in the status box): let the pixel art show behind the content. */
+html:not([data-glass='off']) .window { background: color-mix(in srgb, var(--win-bg) 82%, transparent); }
+html:not([data-glass='off']) .window .window, html:not([data-glass='off']) .toast { background: var(--win-bg); }
 
 /* ---------- clicky buttons ---------- */
 .btn, .tb-btn {

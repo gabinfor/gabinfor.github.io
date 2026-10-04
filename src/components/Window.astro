@@ -8,8 +8,8 @@ const { title, icon, class: className, tag: Tag = 'section' } = Astro.props;
   <div class="titlebar">
     <span class="tb-title">{icon && <Icon name={icon} size={14} />} {title}</span>
     <span class="tb-btns">
-      <button type="button" class="tb-btn" data-win="min" aria-label="Minimize" aria-expanded="true">_</button>
-      <button type="button" class="tb-btn" data-win="close" aria-label="Close">×</button>
+      <button type="button" class="tb-btn" data-win="min" aria-label="Minimize" aria-expanded="true"><Icon name="minimize" size={8} /></button>
+      <button type="button" class="tb-btn" data-win="close" aria-label="Close"><Icon name="close" size={8} /></button>
     </span>
   </div>
   <div class="win-body"><slot /></div>

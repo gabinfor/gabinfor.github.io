@@ -1,9 +1,8 @@
 // The pixel sky: a low-res canvas behind the page, synced to the visitor's local
 // time, with weather, wildlife and fireworks. See Sky.astro for the controls.
 import { type RGB, NIGHT, clamp, disc, dither, glow, hex, mix, rgb, rng, skyAt, smooth } from './palette';
-import {
-  FENCE, FENCE_PAL, HOUSE, HOUSE_CHIMNEY, HOUSE_PAL, HOUSE_WINDOW, OAK, OAK_PAL, PINE, PINE_PAL, drawSprite,
-} from './sprites';
+import { HOUSE_CHIMNEY, HOUSE_WINDOW } from './sprites';
+import { L_FAR, L_FRONT, L_LAKE, L_MID, L_MOUNTAINS, L_NEAR, Land } from './land';
 import { type Weather, WeatherFx, forecast, isWeather } from './weather';
 import { Fireworks } from './fireworks';
 import { blip, noise, toast } from '../scripts/clicky';
@@ -17,7 +16,7 @@ const bloomCanvas = document.querySelector<HTMLCanvasElement>('.sky canvas.bloom
 const bg = bloomCanvas.getContext('2d')!;
 const bloomOn = () => document.documentElement.dataset.bloom !== 'off';
 // What's glowing this frame (filled in while drawing the scene).
-let lights: { sun?: { x: number; y: number; r: number; c: RGB; vis: number }; moon?: { x: number; y: number; r: number; vis: number; lit: number }; stars: number } = { stars: 0 };
+let lights: { sun?: { x: number; y: number; r: number; c: RGB; vis: number }; moon?: { x: number; y: number; r: number; c: RGB; vis: number; lit: number }; stars: number } = { stars: 0 };
 let W = 1, H = 1;
 
 type Star = { x: number; y: number; b: number; tw: boolean; big: boolean; c: string };
@@ -26,27 +25,16 @@ type Bird = { x: number; y: number; vx: number; vy: number; ph: number };
 
 let stars: Star[] = [];
 let clouds: Cloud[] = [];
-let mountains = new Int16Array(1);
-let mountainShadow = new Int16Array(1); // per column: pixels below this row are in shadow
-let hills: Int16Array[] = [];
-let skyline = new Int16Array(1); // top of all terrain (mountains included) per column
-let ground = new Int16Array(1); // highest surface per column (rockets launch from it, birds stay above it)
-let pines: number[] = [];
-let tufts: [number, number, string][] = [];
+const land = new Land();
+// Scratch copy of the sky + mountains, mirrored into the lake each frame.
+const snap = document.createElement('canvas');
+const sg = snap.getContext('2d')!;
 let fireflies: { ax: number; ay: number; ph: number }[] = [];
-let house = { x: 0, y: 0 }, oak = { x: 0, y: 0 }, fence = { x: 0, y: 0 };
 let birds: Bird[] = [];
 let smoke: { x: number; y: number; age: number }[] = [];
 let meteors: { x: number; y: number; vx: number; vy: number; life: number }[] = [];
 let sun: { x: number; y: number; r: number } | null = null;
 let shadesUntil = 0;
-
-const HILLS = [
-  { base: 0.7, amp: 0.06, f1: 0.018, f2: 0.047, ph: 1.3, color: hex('#7fb07a'), haze: 0.55 },
-  { base: 0.79, amp: 0.05, f1: 0.025, f2: 0.061, ph: 4.1, color: hex('#4f9150'), haze: 0.25 },
-  { base: 0.88, amp: 0.04, f1: 0.031, f2: 0.083, ph: 2.2, color: hex('#3a7a3c'), haze: 0 },
-];
-const tri = (v: number) => 1 - Math.abs((((v % 1) + 1) % 1) * 2 - 1);
 
 const params = new URLSearchParams(location.search);
 const weatherParam = params.get('weather');
@@ -106,40 +94,12 @@ function layout() {
   const rc = rng(99), N = Math.max(8, Math.round(W / 22)), now = Date.now() / 1000;
   clouds = Array.from({ length: N }, (_, i) => makeCloud(rc, (i / N) * 0.95, now));
 
-  const mh = (x: number) => H * (0.62 - 0.09 * tri(x * 0.009 + 0.3) - 0.045 * tri(x * 0.023 + 1.7) - 0.012 * tri(x * 0.061 + 0.9));
-  mountains = Int16Array.from({ length: W }, (_, x) => Math.round(mh(x)));
-  // Light comes from the upper left: a pixel is shadowed if terrain to its left rises above the light ray.
-  mountainShadow = Int16Array.from({ length: W }, (_, x) => {
-    let s = Infinity;
-    for (let k = 1; k <= 90; k++) s = Math.min(s, mh(x - k) + k * 0.55);
-    return Math.min(H, Math.floor(s));
-  });
-  hills = HILLS.map((L) => Int16Array.from({ length: W }, (_, x) =>
-    Math.round(H * (L.base - (L.amp * (Math.sin(x * L.f1 + L.ph) + 0.5 * Math.sin(x * L.f2 + L.ph * 2))) / 1.5))));
-  ground = Int16Array.from({ length: W }, (_, x) => Math.min(...hills.map((h) => h[x])));
-  skyline = Int16Array.from({ length: W }, (_, x) => Math.min(mountains[x], ground[x]));
-
-  const near = hills[2], maxIn = (a: Int16Array, x0: number, w: number) => Math.max(...Array.from({ length: w }, (_, i) => a[clamp(x0 + i, 0, W - 1)]));
-  house = { x: Math.round(W * 0.8), y: 0 };
-  house.y = maxIn(near, house.x, HOUSE[0].length) - HOUSE.length + 1;
-  oak = { x: Math.round(W * 0.66) - 4, y: 0 };
-  oak.y = near[clamp(oak.x + 4, 0, W - 1)] - OAK.length + 2;
-  fence = { x: house.x + 14, y: 0 };
-  fence.y = maxIn(near, fence.x, FENCE[0].length) - FENCE.length + 1;
-
-  const rp = rng(5);
-  pines = [];
-  for (let x = 3; x < W - 3; x += 6 + Math.floor(rp() * 14)) pines.push(x);
-  const rt = rng(11), flowers = ['#ffffff', '#ffd84a', '#ff9ad5'];
-  tufts = [];
-  for (let x = 0; x < W; x++) {
-    if (x >= house.x - 1 && x <= fence.x + 10) continue;
-    if (rt() < 0.35) tufts.push([x, near[x] - 1, rt() < 0.07 ? flowers[Math.floor(rt() * 3)] : '']);
-  }
+  land.layout(W, H);
+  snap.width = W; snap.height = H;
   const rf = rng(3);
   fireflies = Array.from({ length: 14 }, () => {
     const ax = rf() * W;
-    return { ax, ay: near[clamp(ax | 0, 0, W - 1)] - 3 - rf() * 9, ph: rf() * 6.28 };
+    return { ax, ay: land.hills[2][clamp(ax | 0, 0, W - 1)] - 3 - rf() * 9, ph: rf() * 6.28 };
   });
   weather.resize(W, H);
   gradKey = '';
@@ -207,7 +167,7 @@ function drawMoon(m: SkyMath, horizon: number, R: number, cover: number, top: RG
     const w = Math.sqrt(Math.max(0, r * r - dy * dy)) || 1, nx = dx / w;
     return p < 0.5 ? nx > k : nx < -k;
   };
-  lights.moon = { x, y, r, vis, lit: (1 - k) / 2 };
+  lights.moon = { x, y, r, c: lit, vis, lit: (1 - k) / 2 };
   g.fillStyle = rgb(lit); glow(g, x, y, r, r + 4, 0.22 * vis * (1 - Math.abs(k) * 0.5));
   const dark = rgb(mix(top, lit, 0.12)), litS = rgb(lit), craterS = rgb(crater);
   const craters = [[-0.35, -0.3], [0.25, 0.2], [-0.1, 0.45], [0.4, -0.35], [0.05, -0.05]].map(([a, b]) => [Math.round(a * r), Math.round(b * r)]);
@@ -229,82 +189,6 @@ function drawClouds(cover: number, cols: string[]) {
     if (v >= 1) for (const [x, y, len, tone] of c.runs) { g.fillStyle = cols[tone]; g.fillRect(x0 + x, y0 + y, len, 1); }
     else for (const [x, y, tone] of c.px) if (dither(x0 + x, y0 + y) < v) { g.fillStyle = cols[tone]; g.fillRect(x0 + x, y0 + y, 1, 1); }
   }
-}
-
-function drawLand(m: SkyMath, bottom: RGB, gloom: number, t: number) {
-  const night = m.n * 0.8, gray: RGB = [110, 114, 124], fog = weather.p.fog;
-  const fogC = mix(mix(bottom, [235, 238, 245], 0.5), [60, 64, 90], m.n * 0.7);
-  // `depth` = how far away a layer is; fog swallows distant layers first.
-  const shade = (c: RGB, depth = 0) => mix(mix(mix(c, gray, gloom * 0.3), NIGHT, night), fogC, fog * depth);
-  const snowC = rgb(mix([240, 244, 255], [120, 128, 170], m.n * 0.7));
-  const snowDepth = weather.snowCover * 3;
-
-  // mountains: faceted by slope, snow above the snowline
-  const mBase = shade(mix(hex('#5d6fa8'), bottom, 0.32), 0.75);
-  const mLit = rgb(mix(mBase, [255, 255, 255], 0.14)), mDark = rgb(mix(mBase, [20, 24, 60], 0.14));
-  const mRim = rgb(mix(mBase, [255, 255, 255], 0.3));
-  const snowLine = H * (0.5 + weather.snowCover * 0.05);
-  for (let x = 0; x < W; x++) {
-    const y0 = mountains[x], sh = mountainShadow[x];
-    g.fillStyle = mDark; g.fillRect(x, y0, 1, H - y0);
-    if (sh > y0) {
-      g.fillStyle = mLit; g.fillRect(x, y0, 1, sh - y0);
-      g.fillStyle = mRim; g.fillRect(x, y0, 1, 1);
-    }
-    g.fillStyle = snowC;
-    for (let y = y0; y < snowLine + 2; y++) if (y < snowLine - 1 || dither(x, y) < 0.5) g.fillRect(x, y, 1, 1);
-  }
-  weather.drawPrecip(g, 0, m.n, bottom); // weather falling on the mountains
-
-  hills.forEach((ys, i) => {
-    const L = HILLS[i], depth = [0.55, 0.35, 0.15][i], col = shade(mix(L.color, bottom, L.haze), depth);
-    g.fillStyle = rgb(col);
-    for (let x = 0; x < W; x++) g.fillRect(x, ys[x], 1, H - ys[x]);
-    // a bright rim with a softer row under it (solid, not dithered — dithering read as a dashed line)
-    g.fillStyle = rgb(mix(col, [255, 255, 255], 0.07));
-    for (let x = 0; x < W; x++) g.fillRect(x, ys[x] + 1, 1, 1);
-    g.fillStyle = rgb(mix(col, [255, 255, 255], 0.16));
-    for (let x = 0; x < W; x++) g.fillRect(x, ys[x], 1, 1);
-    if (snowDepth > 0) {
-      g.fillStyle = snowC;
-      for (let x = 0; x < W; x++) for (let j = 0; j < Math.ceil(snowDepth); j++) if (dither(x, ys[x] + j) < snowDepth - j) g.fillRect(x, ys[x] + j, 1, 1);
-    }
-    const foggy = fog * depth > m.n * 0.7;
-    const tint = foggy ? fogC : NIGHT, amount = clamp(foggy ? fog * depth : m.n * 0.7 + gloom * 0.25), snow = weather.snowCover;
-    if (i === 1) for (const x of pines) drawSprite(g, PINE, PINE_PAL, x - 2, ys[x] - PINE.length + 2, { tint, amount, snow });
-    if (i === 2) {
-      g.fillStyle = rgb(shade(hex('#6cbf5a')));
-      for (const [x, y, flower] of tufts) {
-        if (flower) { g.fillStyle = rgb(shade(hex(flower))); g.fillRect(x, y, 1, 1); g.fillStyle = rgb(shade(hex('#6cbf5a'))); }
-        else if (weather.snowCover < 0.5) g.fillRect(x, y, 1, 1);
-      }
-      drawSprite(g, OAK, OAK_PAL, oak.x, oak.y, { tint, amount, snow });
-      drawSprite(g, FENCE, FENCE_PAL, fence.x, fence.y, { tint, amount, snow });
-      const lit = m.n > 0.5;
-      drawSprite(g, HOUSE, HOUSE_PAL, house.x, house.y, { tint, amount, snow, over: lit ? { G: hex('#ffd45a') } : undefined });
-      if (lit) {
-        // Warm light: a halo on the wall around the window, and a patch of lit ground by the door.
-        const warm = hex('#ffd45a'), { x: wx, y: wy, w: ww, h: wh } = HOUSE_WINDOW, hx = house.x, hy = house.y;
-        g.fillStyle = rgb(mix(mix(hex(HOUSE_PAL.W), tint, amount), warm, 0.3));
-        g.fillRect(hx + wx - 1, hy + wy - 1, ww + 2, 1);
-        g.fillRect(hx + wx - 1, hy + wy + wh, ww + 2, 1);
-        g.fillRect(hx + wx - 1, hy + wy, 1, wh);
-        g.fillRect(hx + wx + ww, hy + wy, 1, wh);
-        const groundY = hy + HOUSE.length;
-        g.fillStyle = rgb(mix(col, warm, 0.22)); g.fillRect(hx + 1, groundY, 11, 1);
-        g.fillStyle = rgb(mix(col, warm, 0.1)); g.fillRect(hx + 2, groundY + 1, 9, 1);
-      }
-      // chimney smoke: separate soft puffs that grow and fade
-      const smokeC = mix(mix([215, 215, 222], bottom, 0.2), NIGHT, m.n * 0.3);
-      for (const p of smoke) {
-        g.fillStyle = rgb(smokeC, 0.6 * (1 - p.age / 5));
-        disc(g, Math.round(p.x), Math.round(p.y), Math.min(2, Math.floor(p.age * 0.6)));
-      }
-    }
-    weather.drawPrecip(g, i + 1, m.n, bottom); // ...and on this hill, hidden by the nearer ones
-  });
-
-  drawFireflies(g, m, t);
 }
 
 // fireflies on warm, dry nights
@@ -341,16 +225,53 @@ function drawBloom(m: SkyMath, t: number) {
   // Sky lights are behind the terrain: punch out its silhouette so nothing glows through a mountain.
   bg.globalCompositeOperation = 'destination-out';
   bg.fillStyle = '#000';
-  for (let x = 0; x < W; x++) bg.fillRect(x, skyline[x], 1, H - skyline[x]);
+  for (let x = 0; x < W; x++) bg.fillRect(x, land.skyline[x], 1, H - land.skyline[x]);
+  bg.globalCompositeOperation = 'source-over';
+  // Their reflections glow in the lake too; then hide whatever the hills cover.
+  bg.globalAlpha = 0.6;
+  reflect(bg, bloomCanvas, t);
+  bg.globalAlpha = 1;
+  bg.globalCompositeOperation = 'destination-out';
+  for (let x = 0; x < W; x++) bg.fillRect(x, land.ground[x], 1, H - land.ground[x]);
   bg.globalCompositeOperation = 'source-over';
   // Lights in front of (or on) the terrain.
   drawFireflies(bg, m, t);
   if (m.n > 0.5) {
     const { x, y, w, h } = HOUSE_WINDOW;
     bg.fillStyle = '#ffd45a';
-    bg.fillRect(house.x + x, house.y + y, w, h);
+    bg.fillRect(land.house.x + x, land.house.y + y, w, h);
+    bg.fillRect(land.lamp.x + 2, land.lamp.y - 6, 1, 1);
+    villageWindows(bg, t);
   }
   weather.drawBolt(bg);
+}
+
+// Village windows on the far hill: lit at night, a few switch off now and then.
+function villageWindows(ctx: CanvasRenderingContext2D, t: number) {
+  ctx.fillStyle = '#ffd45a';
+  land.village.forEach((v, i) => { if (Math.sin(t * 0.05 + i * 2.1) > -0.6) ctx.fillRect(v.x + 1, v.y - 2, 1, 1); });
+}
+
+/**
+ * Mirror what's above the waterline into the lake: squashed 4:1 so the narrow strip of
+ * visible water shows the mountains and some sky (stars, moon, fireworks), with a ripple.
+ */
+function reflect(dst: CanvasRenderingContext2D, src: HTMLCanvasElement, t: number) {
+  const top = land.lakeTop;
+  for (let j = 1; top + j < H; j++) {
+    const sy = top - 1 - j * 4;
+    if (sy < 0) break;
+    const dx = j > 2 ? Math.round(Math.sin(t * 1.6 + j * 0.9)) : 0;
+    dst.drawImage(src, 0, sy, W, 1, dx, top + j, W, 1);
+  }
+}
+
+function drawSmoke(m: SkyMath, bottom: RGB) {
+  const smokeC = mix(mix([215, 215, 222], bottom, 0.2), NIGHT, m.n * 0.3);
+  for (const p of smoke) {
+    g.fillStyle = rgb(smokeC, 0.6 * (1 - p.age / 5));
+    disc(g, Math.round(p.x), Math.round(p.y), Math.min(2, Math.floor(p.age * 0.6)));
+  }
 }
 
 function drawCritters(top: RGB, t: number) {
@@ -394,7 +315,31 @@ function draw(h: number, t: number) {
 
   fireworks.draw(g);
   drawCritters(top, t);
-  drawLand(m, bottom, wx.gloom, t);
+
+  // Landscape, back to front, with each depth layer's rain/snow drawn right after it.
+  const st = { n: m.n, gloom: wx.gloom, fog: wx.fog, snow: weather.snowCover, top, bottom };
+  land.render(st);
+  land.draw(g, L_MOUNTAINS);
+  weather.drawPrecip(g, 0, m.n, bottom);
+  sg.clearRect(0, 0, W, H);
+  sg.drawImage(canvas, 0, 0);
+  land.draw(g, L_LAKE);
+  g.globalAlpha = 0.65;
+  reflect(g, snap, t);
+  g.globalAlpha = 1;
+  land.drawLakeTint(g, st);
+  const lo = lights.sun ?? lights.moon;
+  land.drawLakeFx(g, t, st, lo && { x: lo.x, c: lo.c, a: lo.vis * (lights.moon && !lights.sun ? 0.4 + lights.moon.lit * 0.6 : 1) });
+  land.draw(g, L_FAR);
+  if (m.n > 0.5) villageWindows(g, t);
+  weather.drawPrecip(g, 1, m.n, bottom);
+  land.draw(g, L_MID);
+  weather.drawPrecip(g, 2, m.n, bottom);
+  land.draw(g, L_NEAR);
+  drawSmoke(m, bottom);
+  weather.drawPrecip(g, 3, m.n, bottom);
+  drawFireflies(g, m, t);
+  land.draw(g, L_FRONT);
   weather.drawPrecip(g, 4, m.n, bottom); // foreground: in front of everything
   weather.drawFog(g, m.n, bottom);
   weather.drawLightning(g);
@@ -405,8 +350,8 @@ function draw(h: number, t: number) {
 
 let nextFlock = 8, smokeTimer = 0;
 function update(dt: number, t: number, m: SkyMath) {
-  weather.update(dt, t, [mountains, ...hills]);
-  fireworks.update(dt, W, H, ground);
+  weather.update(dt, t, [land.front, ...land.hills]);
+  fireworks.update(dt, W, H, land.ground);
   const wind = weather.p.wind;
   for (const c of clouds) { c.x += c.speed * wind * dt; if (c.x > W + c.w) c.x -= W + 2 * c.w; }
 
@@ -422,7 +367,7 @@ function update(dt: number, t: number, m: SkyMath) {
   for (const b of birds) { b.x += b.vx * dt; b.y += b.vy * dt + Math.sin(t * 3 + b.ph) * 0.05; }
   birds = birds.filter((b) => b.x > -30 && b.x < W + 30 && b.y > -10);
 
-  if ((smokeTimer -= dt) <= 0) { smokeTimer = 1.3; smoke.push({ x: house.x + HOUSE_CHIMNEY.x, y: house.y + HOUSE_CHIMNEY.y, age: 0 }); }
+  if ((smokeTimer -= dt) <= 0) { smokeTimer = 1.3; smoke.push({ x: land.house.x + HOUSE_CHIMNEY.x, y: land.house.y + HOUSE_CHIMNEY.y, age: 0 }); }
   for (const p of smoke) { p.age += dt; p.y -= 4 * dt; p.x += (wind * 1.2 + Math.sin(p.age * 2) * 0.8) * dt; }
   smoke = smoke.filter((p) => p.age < 5);
 
@@ -495,7 +440,7 @@ addEventListener('sky:timelapse', () => { lapse = { start: performance.now(), fr
 addEventListener('sky:weather', (e) => {
   manualWeather = e.detail;
   weather.name = e.detail ?? forecast();
-  if (e.detail === 'storm') weather.strike(hills[0]);
+  if (e.detail === 'storm') weather.strike(land.hills[0]);
   announce(hourNow(performance.now()));
   wake();
 });
@@ -506,7 +451,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) last
 // Clicking the empty sky: fireworks at night, startled birds by day, and the sun has a secret.
 let foundFireworks = false;
 addEventListener('pointerdown', (e) => {
-  if ((e.target as Element).closest('.window, a, button, input, textarea, select, label, .b88, .toast')) return;
+  const target = e.target instanceof Element ? e.target : document.body;
+  if (target.closest('.window, a, button, input, textarea, select, label, .b88, .toast')) return;
   const x = e.clientX / S, y = e.clientY / S, h = hourNow(performance.now()), m = window.__skyMath(h);
   if (sun && Math.hypot(x - sun.x, y - sun.y) <= sun.r + 3) {
     shadesUntil = Date.now() / 1000 + 8;
@@ -514,10 +460,10 @@ addEventListener('pointerdown', (e) => {
     toast('the sun is too cool for you now.', 'shades on');
   } else if (m.n > 0.5) {
     // Always burst above the skyline, or a low click would explode out of sight behind a mountain.
-    const top = Math.min(...Array.from({ length: 21 }, (_, i) => skyline[clamp((x | 0) + i - 10, 0, W - 1)]));
-    fireworks.launch(W, H, ground, x, Math.min(y, top - 10));
+    const top = Math.min(...Array.from({ length: 21 }, (_, i) => land.skyline[clamp((x | 0) + i - 10, 0, W - 1)]));
+    fireworks.launch(W, H, land.ground, x, Math.min(y, top - 10));
     if (!foundFireworks) { foundFireworks = true; toast('you lit up the night sky. click again!'); }
-  } else if (y < ground[clamp(x | 0, 0, W - 1)]) {
+  } else if (y < land.ground[clamp(x | 0, 0, W - 1)]) {
     for (let k = 0; k < 5; k++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = 18 + Math.random() * 10;
       birds.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, ph: Math.random() * 2 });

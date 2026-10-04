@@ -25,33 +25,6 @@ export const HOUSE_PAL = {
 export const HOUSE_WINDOW = { x: 2, y: 9, w: 3, h: 2 };
 export const HOUSE_CHIMNEY = { x: 9.5, y: -1 };
 
-export const OAK = [
-  '   LLL   ',
-  '  LLlLL  ',
-  ' LLlLLLL ',
-  'LLlLLLlLL',
-  'LlLLLLLLL',
-  'LLLLlLLLd',
-  ' dLLLLLd ',
-  '  ddLdd  ',
-  '    T    ',
-  '    T    ',
-  '   TTT   ',
-];
-export const OAK_PAL = { L: '#3f8a3f', l: '#6cbf5a', d: '#2a6630', T: '#6b4a2b' };
-
-export const PINE = [
-  '  p  ',
-  '  p  ',
-  ' ppp ',
-  ' pPp ',
-  'ppppp',
-  ' ppp ',
-  'pppPp',
-  '  t  ',
-];
-export const PINE_PAL = { p: '#2d5e3a', P: '#3f7a4a', t: '#5b3a22' };
-
 export const FENCE = [
   'f  f  f  f',
   'ffffffffff',
