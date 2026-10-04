@@ -4,8 +4,21 @@ import { noise } from '../scripts/clicky';
 
 export { WEATHERS, forecast, isWeather, type Weather } from './forecast';
 
-type Drop = { x: number; y: number; v: number; len: number };
-type Flake = { x: number; y: number; v: number; ph: number; big: boolean };
+// Precipitation lives on depth layers so it falls across the whole valley, not just
+// the farthest ridge: 0 = mountains, 1..3 = hills far→near, 4 = foreground (in front of
+// everything). Each particle stops at its own layer's surface and is drawn right after
+// that layer, so nearer hills hide it. Distant layers are slower, shorter and fainter.
+const LAYERS = [
+  { share: 0.14, speed: 0.5, len: 1, fade: 0.55 },
+  { share: 0.18, speed: 0.6, len: 2, fade: 0.45 },
+  { share: 0.2, speed: 0.72, len: 2, fade: 0.3 },
+  { share: 0.22, speed: 0.86, len: 3, fade: 0.15 },
+  { share: 0.26, speed: 1.05, len: 4, fade: 0 },
+];
+const pickLayer = (r: number) => { let acc = 0; for (let i = 0; i < LAYERS.length; i++) if (r < (acc += LAYERS[i].share)) return i; return LAYERS.length - 1; };
+
+type Drop = { x: number; y: number; v: number; len: number; layer: number };
+type Flake = { x: number; y: number; v: number; ph: number; size: number; layer: number };
 
 export class WeatherFx {
   name: Weather;
@@ -17,7 +30,7 @@ export class WeatherFx {
   private W = 1; private H = 1;
   private drops: Drop[] = [];
   private flakes: Flake[] = [];
-  private splashes: { x: number; y: number; life: number }[] = [];
+  private splashes: { x: number; y: number; life: number; layer: number }[] = [];
   private banks: { x: number; y: number; w: number; v: number }[] = [];
   private bolt: [number, number][] = [];
   private boltLife = 0;
@@ -32,8 +45,14 @@ export class WeatherFx {
   resize(W: number, H: number) {
     this.W = W; this.H = H;
     const r = rng(42);
-    this.drops = Array.from({ length: Math.ceil((W * H) / 60) }, () => ({ x: r() * W, y: r() * H, v: 110 + r() * 60, len: 2 + Math.floor(r() * 3) }));
-    this.flakes = Array.from({ length: Math.ceil((W * H) / 180) }, () => ({ x: r() * W, y: r() * H, v: 7 + r() * 12, ph: r() * 6.28, big: r() < 0.15 }));
+    this.drops = Array.from({ length: Math.ceil((W * H) / 60) }, () => {
+      const layer = pickLayer(r()), L = LAYERS[layer];
+      return { x: r() * W, y: r() * H, v: (110 + r() * 60) * L.speed, len: L.len, layer };
+    });
+    this.flakes = Array.from({ length: Math.ceil((W * H) / 150) }, () => {
+      const layer = pickLayer(r());
+      return { x: r() * W, y: r() * H, v: (7 + r() * 12) * LAYERS[layer].speed, ph: r() * 6.28, size: layer === 4 || (layer === 3 && r() < 0.3) ? 2 : 1, layer };
+    });
     this.banks = Array.from({ length: Math.max(4, Math.round(W / 40)) }, () => ({
       x: r() * W, y: Math.round(H * (0.58 + r() * 0.36)), w: 30 + Math.floor(r() * 60), v: 0.6 + r() * 1.2,
     }));
@@ -43,17 +62,21 @@ export class WeatherFx {
   private get nDrops() { return Math.floor(this.drops.length * clamp(this.p.rain / 1.6)); }
   private get nFlakes() { return Math.floor(this.flakes.length * clamp(this.p.snow)); }
 
-  update(dt: number, t: number, ground: Int16Array) {
+  /** `surfaces`: mountains then hills far→near; layer 4 falls to the bottom of the screen. */
+  update(dt: number, t: number, surfaces: Int16Array[]) {
     const target = PROFILES[this.name], k = Math.min(1, dt * 0.4);
     for (const key of Object.keys(target) as (keyof Profile)[]) this.p[key] += (target[key] - this.p[key]) * k;
     this.snowCover = clamp(this.snowCover + (this.p.snow > 0.3 ? (dt / 90) * this.p.snow : -dt / 240));
 
-    const { W } = this, slant = this.slant, gy = (x: number) => ground[clamp(x | 0, 0, W - 1)];
+    const { W, H } = this, slant = this.slant;
+    const gy = (x: number, layer: number) => (layer < surfaces.length ? surfaces[layer][clamp(x | 0, 0, W - 1)] : H + 4);
     for (let i = 0, n = this.nDrops; i < n; i++) {
       const d = this.drops[i];
       d.y += d.v * dt; d.x += slant * d.v * dt;
-      if (d.y >= gy(d.x)) {
-        if (this.splashes.length < 150 && Math.random() < 0.5) this.splashes.push({ x: d.x | 0, y: gy(d.x), life: 0.15 });
+      const floor = gy(d.x, d.layer);
+      if (d.y >= floor) {
+        if (d.layer < surfaces.length && this.splashes.length < 200 && Math.random() < 0.5)
+          this.splashes.push({ x: d.x | 0, y: floor, life: 0.15, layer: d.layer });
         d.y = -Math.random() * 30;
         d.x = Math.random() * (W + 40) - 40 * Math.sign(slant);
       }
@@ -61,16 +84,16 @@ export class WeatherFx {
     this.splashes = this.splashes.filter((s) => (s.life -= dt) > 0);
 
     for (let i = 0, n = this.nFlakes; i < n; i++) {
-      const f = this.flakes[i];
-      f.x += (Math.sin(t * 1.3 + f.ph) * 5 + this.p.wind * 3) * dt;
+      const f = this.flakes[i], depth = LAYERS[f.layer].speed;
+      f.x += (Math.sin(t * 1.3 + f.ph) * 5 + this.p.wind * 3) * depth * dt;
       f.y += f.v * dt;
       if (f.x > W) f.x -= W;
-      if (f.y >= gy(f.x)) { f.y = -2; f.x = Math.random() * W; }
+      if (f.y >= gy(f.x, f.layer)) { f.y = -2; f.x = Math.random() * W; }
     }
 
     for (const b of this.banks) { b.x += b.v * this.p.wind * dt; if (b.x > W) b.x -= W + b.w; }
 
-    if (this.p.lightning > 0.5 && (this.nextStrike -= dt) <= 0) this.strike(ground);
+    if (this.p.lightning > 0.5 && (this.nextStrike -= dt) <= 0) this.strike(surfaces[Math.random() < 0.5 ? 0 : 1]);
     this.boltLife -= dt;
     this.flash = Math.max(0, this.flash - dt * 3.5);
   }
@@ -95,25 +118,31 @@ export class WeatherFx {
     noise({ dur: 1.8, freq: 160, gain: 0.3, delay: 0.3 + r() });
   }
 
-  drawPrecip(g: CanvasRenderingContext2D, n: number, bottom: RGB) {
+  /** Draw the rain and snow belonging to one depth layer. */
+  drawPrecip(g: CanvasRenderingContext2D, layer: number, n: number, bottom: RGB) {
+    const fade = LAYERS[layer].fade;
     if (this.p.rain > 0.02) {
-      g.fillStyle = rgb(mix(mix([170, 195, 235], bottom, 0.3), [90, 100, 140], n * 0.5), 0.8);
+      const rain = mix(mix([170, 195, 235], bottom, 0.3), [90, 100, 140], n * 0.5);
+      g.fillStyle = rgb(mix(rain, bottom, fade), 0.85 - fade * 0.4);
       const s = this.slant;
       for (let i = 0, N = this.nDrops; i < N; i++) {
-        const d = this.drops[i], x = d.x | 0, y = d.y | 0;
-        if (s < 0.25) g.fillRect(x, y - d.len, 1, d.len);
+        const d = this.drops[i];
+        if (d.layer !== layer) continue;
+        const x = d.x | 0, y = d.y | 0;
+        if (s < 0.25 || d.len < 2) g.fillRect(x, y - d.len, 1, d.len);
         else for (let j = 0; j < d.len; j++) g.fillRect(x - Math.round(j * s), y - j, 1, 1);
       }
       for (const sp of this.splashes) {
+        if (sp.layer !== layer) continue;
         const o = sp.life > 0.07 ? 1 : 2;
         g.fillRect(sp.x - o, sp.y - o, 1, 1); g.fillRect(sp.x + o, sp.y - o, 1, 1);
       }
     }
     if (this.p.snow > 0.02) {
-      g.fillStyle = rgb(mix([248, 250, 255], [150, 158, 200], n * 0.6));
+      g.fillStyle = rgb(mix(mix([248, 250, 255], [150, 158, 200], n * 0.6), bottom, fade));
       for (let i = 0, N = this.nFlakes; i < N; i++) {
-        const f = this.flakes[i], sz = f.big ? 2 : 1;
-        g.fillRect(f.x | 0, f.y | 0, sz, sz);
+        const f = this.flakes[i];
+        if (f.layer === layer) g.fillRect(f.x | 0, f.y | 0, f.size, f.size);
       }
     }
   }

@@ -15,6 +15,7 @@ const fullTitle = title ? `${title} :: ${SITE.title}` : `${SITE.title}'s homepag
 const path = Astro.url.pathname;
 const nav: { href: string; label: string; icon: IconName }[] = [
   { href: '/', label: 'home', icon: 'home' },
+  { href: '/about/', label: 'about', icon: 'person' },
   { href: '/blog/', label: 'writing', icon: 'pencil' },
   { href: '/lab/', label: 'lab', icon: 'flask' },
   { href: '/blogroll/', label: 'blogroll', icon: 'globe' },

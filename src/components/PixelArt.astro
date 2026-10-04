@@ -1,0 +1,21 @@
+---
+// Renders a pixel sprite (rows of palette chars, space/. = transparent) as a crisp SVG.
+interface Props { rows: readonly string[]; palette: Record<string, string>; scale?: number; label?: string; class?: string }
+const { rows, palette, scale = 8, label, class: className } = Astro.props;
+const w = rows[0].length, h = rows.length;
+const rects: { x: number; y: number; w: number; fill: string }[] = [];
+rows.forEach((row, y) => {
+  let x = 0;
+  while (x < w) {
+    const c = row[x];
+    if (!palette[c]) { x++; continue; }
+    const s = x;
+    while (row[x] === c) x++;
+    rects.push({ x: s, y, w: x - s, fill: palette[c] });
+  }
+});
+---
+<svg class={className} viewBox={`0 0 ${w} ${h}`} width={w * scale} height={h * scale} shape-rendering="crispEdges"
+  role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : 'true'}>
+  {rects.map((r) => <rect x={r.x} y={r.y} width={r.w} height="1" fill={r.fill} />)}
+</svg>

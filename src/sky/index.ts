@@ -23,7 +23,7 @@ let clouds: Cloud[] = [];
 let mountains = new Int16Array(1);
 let mountainShadow = new Int16Array(1); // per column: pixels below this row are in shadow
 let hills: Int16Array[] = [];
-let ground = new Int16Array(1); // highest surface per column — where rain lands
+let ground = new Int16Array(1); // highest surface per column (rockets launch from it, birds stay above it)
 let pines: number[] = [];
 let tufts: [number, number, string][] = [];
 let fireflies: { ax: number; ay: number; ph: number }[] = [];
@@ -165,10 +165,11 @@ function drawSun(m: SkyMath, horizon: number, R: number, cover: number, bottom: 
   sun = { x, y, r: R };
   const vis = 1 - smooth(0.5, 0.95, cover); // thin clouds don't dim it
   if (vis < 0.25) return;
-  const c = mix(hex('#fff2a8'), hex('#ff8a3d'), 1 - smooth(0, 0.35, m.e));
+  // Behind cloud the sun fades into the sky colour (solid, not dithered — dithering looks like noise).
+  const c = mix(mix(hex('#fff2a8'), hex('#ff8a3d'), 1 - smooth(0, 0.35, m.e)), bottom, 1 - vis);
   g.fillStyle = rgb(mix(c, bottom, 0.35)); glow(g, x, y, R, R + 6, 0.55 * vis);
-  g.fillStyle = rgb(mix(c, hex('#ff8a3d'), 0.35)); disc(g, x, y, R, vis);
-  g.fillStyle = rgb(c); disc(g, x, y, R - 1, vis);
+  g.fillStyle = rgb(mix(c, hex('#ff8a3d'), 0.35 * vis)); disc(g, x, y, R);
+  g.fillStyle = rgb(c); disc(g, x, y, R - 1);
   g.fillStyle = 'rgba(255,255,255,0.7)'; g.fillRect(x - Math.round(R * 0.45), y - Math.round(R * 0.5), 2, 1);
   if (t < shadesUntil) { // easter egg: the sun puts on sunglasses
     const lw = Math.max(2, Math.round(R * 0.6)), lh = Math.max(2, Math.round(R * 0.35)), ly = y - Math.round(R * 0.25);
@@ -187,9 +188,10 @@ function drawMoon(m: SkyMath, horizon: number, R: number, cover: number, top: RG
   sun = null;
   const x = Math.round(W * (0.08 + 0.84 * m.moonP)), y = Math.round(horizon + m.e * H * 0.55), r = R - 1;
   const today = new Date(), halloween = today.getMonth() === 9 && today.getDate() === 31;
-  const lit: RGB = halloween ? hex('#ffb45a') : hex('#f3efd6'), crater = mix(lit, [120, 110, 90], 0.25);
+  const fullLit: RGB = halloween ? hex('#ffb45a') : hex('#f3efd6');
   const p = moonPhase(), k = Math.cos(2 * Math.PI * p), vis = 1 - smooth(0.5, 0.95, cover);
   if (vis < 0.25) return; // hidden behind thick cloud
+  const lit = mix(top, fullLit, vis), crater = mix(lit, [120, 110, 90], 0.25);
   const isLit = (dx: number, dy: number) => {
     const w = Math.sqrt(Math.max(0, r * r - dy * dy)) || 1, nx = dx / w;
     return p < 0.5 ? nx > k : nx < -k;
@@ -200,7 +202,6 @@ function drawMoon(m: SkyMath, horizon: number, R: number, cover: number, top: RG
   for (let dy = -r; dy <= r; dy++) {
     const half = Math.round(Math.sqrt(r * r - dy * dy));
     for (let dx = -half; dx <= half; dx++) {
-      if (vis < 1 && dither(x + dx, y + dy) >= vis) continue;
       const on = isLit(dx, dy);
       g.fillStyle = !on ? dark : craters.some(([cx, cy]) => cx === dx && cy === dy) ? craterS : litS;
       g.fillRect(x + dx, y + dy, 1, 1);
@@ -241,14 +242,17 @@ function drawLand(m: SkyMath, bottom: RGB, gloom: number, t: number) {
     g.fillStyle = snowC;
     for (let y = y0; y < snowLine + 2; y++) if (y < snowLine - 1 || dither(x, y) < 0.5) g.fillRect(x, y, 1, 1);
   }
+  weather.drawPrecip(g, 0, m.n, bottom); // weather falling on the mountains
 
   hills.forEach((ys, i) => {
     const L = HILLS[i], depth = [0.55, 0.35, 0.15][i], col = shade(mix(L.color, bottom, L.haze), depth);
-    const body = rgb(col), edge = rgb(mix(col, [255, 255, 255], 0.16));
-    g.fillStyle = body;
+    g.fillStyle = rgb(col);
     for (let x = 0; x < W; x++) g.fillRect(x, ys[x], 1, H - ys[x]);
-    g.fillStyle = edge;
-    for (let x = 0; x < W; x++) { g.fillRect(x, ys[x], 1, 1); if (dither(x, ys[x] + 1) < 0.5) g.fillRect(x, ys[x] + 1, 1, 1); }
+    // a bright rim with a softer row under it (solid, not dithered — dithering read as a dashed line)
+    g.fillStyle = rgb(mix(col, [255, 255, 255], 0.07));
+    for (let x = 0; x < W; x++) g.fillRect(x, ys[x] + 1, 1, 1);
+    g.fillStyle = rgb(mix(col, [255, 255, 255], 0.16));
+    for (let x = 0; x < W; x++) g.fillRect(x, ys[x], 1, 1);
     if (snowDepth > 0) {
       g.fillStyle = snowC;
       for (let x = 0; x < W; x++) for (let j = 0; j < Math.ceil(snowDepth); j++) if (dither(x, ys[x] + j) < snowDepth - j) g.fillRect(x, ys[x] + j, 1, 1);
@@ -267,17 +271,25 @@ function drawLand(m: SkyMath, bottom: RGB, gloom: number, t: number) {
       const lit = m.n > 0.5;
       drawSprite(g, HOUSE, HOUSE_PAL, house.x, house.y, { tint, amount, snow, over: lit ? { G: hex('#ffd45a') } : undefined });
       if (lit) {
-        g.fillStyle = 'rgb(255,212,90)';
-        glow(g, house.x + HOUSE_WINDOW.x + 1, house.y + HOUSE_WINDOW.y + 0.5, 1.5, 5.5, 0.35);
+        // Warm light: a halo on the wall around the window, and a patch of lit ground by the door.
+        const warm = hex('#ffd45a'), { x: wx, y: wy, w: ww, h: wh } = HOUSE_WINDOW, hx = house.x, hy = house.y;
+        g.fillStyle = rgb(mix(mix(hex(HOUSE_PAL.W), tint, amount), warm, 0.3));
+        g.fillRect(hx + wx - 1, hy + wy - 1, ww + 2, 1);
+        g.fillRect(hx + wx - 1, hy + wy + wh, ww + 2, 1);
+        g.fillRect(hx + wx - 1, hy + wy, 1, wh);
+        g.fillRect(hx + wx + ww, hy + wy, 1, wh);
+        const groundY = hy + HOUSE.length;
+        g.fillStyle = rgb(mix(col, warm, 0.22)); g.fillRect(hx + 1, groundY, 11, 1);
+        g.fillStyle = rgb(mix(col, warm, 0.1)); g.fillRect(hx + 2, groundY + 1, 9, 1);
       }
-      // chimney smoke
-      const smokeC = mix(mix([205, 205, 212], bottom, 0.25), NIGHT, m.n * 0.6);
-      g.fillStyle = rgb(smokeC);
+      // chimney smoke: separate soft puffs that grow and fade
+      const smokeC = mix(mix([215, 215, 222], bottom, 0.2), NIGHT, m.n * 0.3);
       for (const p of smoke) {
-        const a = (1 - p.age / 5) * 0.8, sz = p.age > 2 ? 2 : 1;
-        if (dither(p.x | 0, p.y | 0) < a) g.fillRect(p.x | 0, p.y | 0, sz, sz);
+        g.fillStyle = rgb(smokeC, 0.6 * (1 - p.age / 5));
+        disc(g, Math.round(p.x), Math.round(p.y), Math.min(2, Math.floor(p.age * 0.6)));
       }
     }
+    weather.drawPrecip(g, i + 1, m.n, bottom); // ...and on this hill, hidden by the nearer ones
   });
 
   // fireflies on warm, dry nights
@@ -336,7 +348,7 @@ function draw(h: number, t: number) {
   fireworks.draw(g);
   drawCritters(top, t);
   drawLand(m, bottom, wx.gloom, t);
-  weather.drawPrecip(g, m.n, bottom);
+  weather.drawPrecip(g, 4, m.n, bottom); // foreground: in front of everything
   weather.drawFog(g, m.n, bottom);
   weather.drawLightning(g);
 }
@@ -345,7 +357,7 @@ function draw(h: number, t: number) {
 
 let nextFlock = 8, smokeTimer = 0;
 function update(dt: number, t: number, m: SkyMath) {
-  weather.update(dt, t, ground);
+  weather.update(dt, t, [mountains, ...hills]);
   fireworks.update(dt, W, H, ground);
   const wind = weather.p.wind;
   for (const c of clouds) { c.x += c.speed * wind * dt; if (c.x > W + c.w) c.x -= W + 2 * c.w; }
@@ -362,8 +374,8 @@ function update(dt: number, t: number, m: SkyMath) {
   for (const b of birds) { b.x += b.vx * dt; b.y += b.vy * dt + Math.sin(t * 3 + b.ph) * 0.05; }
   birds = birds.filter((b) => b.x > -30 && b.x < W + 30 && b.y > -10);
 
-  if ((smokeTimer -= dt) <= 0) { smokeTimer = 0.6; smoke.push({ x: house.x + HOUSE_CHIMNEY.x, y: house.y + HOUSE_CHIMNEY.y, age: 0 }); }
-  for (const p of smoke) { p.age += dt; p.y -= 3 * dt; p.x += (wind * 1.5 + Math.sin(p.age * 2) * 0.8) * dt; }
+  if ((smokeTimer -= dt) <= 0) { smokeTimer = 1.3; smoke.push({ x: house.x + HOUSE_CHIMNEY.x, y: house.y + HOUSE_CHIMNEY.y, age: 0 }); }
+  for (const p of smoke) { p.age += dt; p.y -= 4 * dt; p.x += (wind * 1.2 + Math.sin(p.age * 2) * 0.8) * dt; }
   smoke = smoke.filter((p) => p.age < 5);
 
   // shooting stars on clear nights
@@ -435,7 +447,7 @@ addEventListener('sky:timelapse', () => { lapse = { start: performance.now(), fr
 addEventListener('sky:weather', (e) => {
   manualWeather = e.detail;
   weather.name = e.detail ?? forecast();
-  if (e.detail === 'storm') weather.strike(ground);
+  if (e.detail === 'storm') weather.strike(hills[0]);
   announce(hourNow(performance.now()));
   wake();
 });

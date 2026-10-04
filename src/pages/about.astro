@@ -1,0 +1,80 @@
+---
+import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
+import PixelArt from '../components/PixelArt.astro';
+import { SITE } from '../data/site';
+
+// Swap this placeholder smiley for your own pixel self-portrait any time.
+const AVATAR = [
+  '...XXXXXX...',
+  '.XXYYYYYYXX.',
+  '.XYYYYYYYYX.',
+  'XYYYYYYYYYYX',
+  'XKKKKKKKKKKX',
+  'XYKKKYYKKKYX',
+  'XYYKYYYYKYYX',
+  'XYYYYYYYYYYX',
+  'XYYXYYYYXYYX',
+  '.XYYXXXXYYX.',
+  '.XXYYYYYYXX.',
+  '...XXXXXX...',
+];
+
+// Edit these! They show up in the profile card.
+const PROFILE: [string, string][] = [
+  ['name', SITE.author],
+  ['location', 'somewhere on the internet'],
+  ['currently', 'building this website'],
+  ['likes', 'pixel art, shaders, small weird websites'],
+  ['status', 'online'],
+];
+---
+<Base title="about" description={`About ${SITE.author} and this website.`}>
+  <h1><Icon name="person" size={24} /> About me</h1>
+
+  <div class="card">
+    <div class="avatar">
+      <PixelArt rows={AVATAR} palette={{ X: '#1b1b2f', Y: '#ffd84a', K: '#111111' }} scale={8} label="Pixel avatar: a smiley face wearing sunglasses" />
+    </div>
+    <dl class="profile">
+      {PROFILE.map(([k, v]) => (<><dt>{k}</dt><dd>{k === 'status' ? <><span class="dot" aria-hidden="true"></span>{v}</> : v}</dd></>))}
+    </dl>
+  </div>
+
+  <div class="prose">
+    <h2>hello!</h2>
+    <p>I'm {SITE.author}. I like making things for the web: small tools, visual experiments, and sites with a bit of personality. This blog is where I write about what I'm building and learning.</p>
+    <p>I made this place because the web used to feel like a bunch of hand-made homes, and I wanted one of my own.</p>
+
+    <h2>about this site</h2>
+    <ul>
+      <li>Built with <a href="https://astro.build">Astro</a> and hosted on GitHub Pages.</li>
+      <li>The sky is drawn live in a tiny canvas, synced to <i>your</i> clock, with its own little weather forecast.</li>
+      <li>Headings are set in <a href="https://fonts.google.com/specimen/Pixelify+Sans">Pixelify Sans</a>, and the body text in good old Verdana.</li>
+      <li>No trackers, no cookies, no analytics. Your visit counter lives only in your browser.</li>
+      <li>There are a few secrets hidden around. Have fun looking.</li>
+    </ul>
+
+    <h2>say hi</h2>
+    <p>Find me on <a href={SITE.github}>GitHub</a>. If you have a site too, <a href="/blogroll/">link to me</a> and I'll link back!</p>
+  </div>
+</Base>
+
+<style>
+  .card {
+    display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+    padding: 14px; margin-bottom: 8px; border: 2px solid var(--border);
+    background: var(--face); color: var(--face-ink);
+    box-shadow: inset 2px 2px 0 var(--hilite), inset -2px -2px 0 var(--shadow);
+  }
+  .avatar {
+    padding: 8px; background: var(--sunken); border: 2px solid var(--border);
+    box-shadow: inset 2px 2px 0 rgb(0 0 0 / 0.5); line-height: 0;
+  }
+  .avatar :global(svg) { width: 96px; height: 96px; }
+  .profile { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: 13px; flex: 1 1 220px; }
+  .profile dt { font: 600 13px var(--pixel); color: var(--win-muted); }
+  .profile dt::after { content: ':'; }
+  .profile dd { margin: 0; }
+  .dot { display: inline-block; width: 8px; height: 8px; background: #2bd94a; border: 1px solid #000; margin-right: 6px; animation: blink 1.6s steps(1) infinite; }
+</style>
