@@ -1,18 +1,19 @@
 // Generates the pixel-art cursors in public/cursors/. Run: node scripts/make-cursors.mjs
-// X = black outline, W = white fill, . = transparent. Drawn at 2x.
+// X = black outline, W = white fill, . = transparent. Drawn at 2x; keep each under 32px
+// (some platforms ignore larger cursors).
 import { writeFileSync } from 'node:fs';
 
 const CURSORS = {
   arrow: [
     'X..........', 'XX.........', 'XWX........', 'XWWX.......', 'XWWWX......', 'XWWWWX.....',
     'XWWWWWX....', 'XWWWWWWX...', 'XWWWWWWWX..', 'XWWWWWWWWX.', 'XWWWWWXXXXX', 'XWWXWWX....',
-    'XWX.XWWX...', 'XX..XWWX...', 'X....XWWX..', '.....XWWX..', '......XX...',
+    'XWX.XWWX...', 'XX..XWWX...', 'X....XWWX..', '.....XXX...',
   ],
   hand: [
     '.....XX.......', '....XWWX......', '....XWWX......', '....XWWX......', '....XWWXXX....',
     '....XWWXWWXXX.', '....XWWXWWXWWX', '.XX.XWWWWWWWWX', 'XWWXXWWWWWWWWX', 'XWWWXWWWWWWWWX',
     '.XWWWWWWWWWWWX', '..XWWWWWWWWWWX', '..XWWWWWWWWWX.', '...XWWWWWWWWX.', '....XWWWWWWX..',
-    '....XWWWWWWX..', '....XXXXXXXX..',
+    '....XXXXXXXX..',
   ],
   text: [
     'WWW.WWW', 'WXXWXXW', 'WWWXWWW', '..WXW..', '..WXW..', '..WXW..', '..WXW..', '..WXW..',
