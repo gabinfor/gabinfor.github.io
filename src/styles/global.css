@@ -141,6 +141,14 @@ p, li, dd, h1, h2, h3, blockquote, pre, code, textarea, input[type='text'] {
 /* links inside text keep the hand */
 p a, li a, dd a, h1 a, h2 a, h3 a { cursor: url('/cursors/hand.svg') 11 0, pointer; }
 
+/* ---------- touch ---------- */
+a, button, .btn, input, label { touch-action: manipulation; } /* no double-tap-zoom delay */
+@media (pointer: coarse) {
+  .btn { min-height: 38px; }
+  .titlebar .tb-btn { width: 30px; height: 24px; }
+  .slot, .preset { min-height: 36px; }
+}
+
 /* ---------- pressed toggle buttons ---------- */
 .btn[aria-pressed='true'] {
   box-shadow: inset 2px 2px 0 var(--shadow), inset -2px -2px 0 var(--hilite);

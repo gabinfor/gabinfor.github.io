@@ -5,7 +5,8 @@
 <div class="sky" aria-hidden="true" transition:persist="sky"><canvas class="base"></canvas><canvas class="bloom"></canvas></div>
 
 <style>
-  .sky { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+  /* 100lvh: the largest viewport, so the sky never resizes as a phone's address bar comes and goes */
+  .sky { position: fixed; top: 0; left: 0; right: 0; height: 100vh; height: 100lvh; z-index: -1; overflow: hidden; }
   canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; max-width: none; }
   /* Bloom: only the light sources, blurred and screen-blended over the scene (all on the GPU). */
   .bloom { filter: blur(6px) brightness(1.8) saturate(1.4); mix-blend-mode: screen; }

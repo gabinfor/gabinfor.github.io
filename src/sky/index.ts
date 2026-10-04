@@ -19,6 +19,7 @@ const canvas = document.querySelector<HTMLCanvasElement>('.sky canvas.base')!;
 const g = canvas.getContext('2d')!;
 // Bloom layer: light sources only, blurred by CSS and screen-blended on top. Toggled via html[data-bloom].
 const bloomCanvas = document.querySelector<HTMLCanvasElement>('.sky canvas.bloom')!;
+const skyEl = document.querySelector<HTMLElement>('.sky');
 const bg = bloomCanvas.getContext('2d')!;
 const bloomOn = () => document.documentElement.dataset.bloom !== 'off';
 // What's glowing this frame (filled in while drawing the scene).
@@ -164,11 +165,14 @@ function drawBubbles(t: number, n: number) {
 }
 
 function layout() {
-  S = Math.max(4, Math.ceil(Math.max(innerWidth / 480, innerHeight / 300)));
+  S = Math.max(4, Math.ceil(Math.max(innerWidth / 480, Math.max(innerHeight, skyEl?.clientHeight ?? 0) / 300)));
   const forced = Number(new URLSearchParams(location.search).get('scale'));
   if (new URLSearchParams(location.search).has('perf') && forced >= 1) S = forced; // tuning only
+  // Size to the *large* viewport (.sky is 100lvh), so the phone address bar sliding in and out
+  // doesn't change it; see the resize handler below.
+  const viewH = Math.max(innerHeight, skyEl?.clientHeight ?? 0);
   W = Math.max(1, Math.ceil(innerWidth / S));
-  H = Math.max(1, Math.ceil(innerHeight / S));
+  H = Math.max(1, Math.ceil(viewH / S));
   for (const c of [canvas, bloomCanvas]) {
     c.width = W; c.height = H;
     c.style.width = `${W * S}px`; c.style.height = `${H * S}px`;
@@ -626,7 +630,19 @@ function schedule(immediate = false) {
 }
 const wake = () => { last = 0; lastSim = performance.now(); schedule(true); };
 
-addEventListener('resize', () => { layout(); wake(); });
+// Rebuild only when the width or orientation really changes. On phones the height changes
+// constantly as the address bar shows and hides; rebuilding then made the scene jump and stutter.
+let laidOut = { w: innerWidth, h: innerHeight };
+let resizeTimer = 0;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = window.setTimeout(() => {
+    const dw = innerWidth !== laidOut.w, dh = Math.abs(innerHeight - laidOut.h) / laidOut.h > 0.25;
+    if (!dw && !dh) return;
+    laidOut = { w: innerWidth, h: innerHeight };
+    layout(); wake();
+  }, 150);
+});
 
 // ?perf: window.__skyBench(frames, hoursPerFrame) runs frames synchronously (works even in a
 // hidden tab) and returns per-section timings; a non-zero hour step exercises landscape re-renders.

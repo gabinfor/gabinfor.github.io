@@ -66,6 +66,9 @@ import { STATIONS } from '../data/radio';
   let audio: HTMLAudioElement | null = null;
   let actx: AudioContext | undefined, analyser: AnalyserNode | null = null, source: MediaElementAudioSourceNode | null = null;
   let raf = 0;
+  // iOS Safari can play cross-origin radio streams silently once they're routed through Web
+  // Audio, so on iPhone/iPad the radio skips the spectrum analyser (gentle idle bars instead).
+  const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   function show(state: string) {
     $('.st-name span').textContent = station.name;
@@ -79,7 +82,7 @@ import { STATIONS } from '../data/radio';
     root.classList.toggle('playing', on && state === 'live');
   }
 
-  function start(withAnalyser = true) {
+  function start(withAnalyser = !iOS) {
     stop(false);
     const a = new Audio();
     audio = a;
