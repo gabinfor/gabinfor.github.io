@@ -512,18 +512,21 @@ function simplePine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols
   for (let i = tiers - 1; i >= 0; i--) {
     const t0 = Math.round(top + i * step), hw = maxHalf * (0.32 + 0.68 * ((i + 1) / tiers));
     const startHalf = i === 0 ? 0 : hw * 0.16;
-    const tier = new Pixels();
+    const tier = new Pixels(), tones = [cols.deep, cols.dark, cols.body, cols.lit];
     for (let r = 0; r <= th; r++) {
-      // a gentle zigzag of needle tufts along the sides keeps it pixel-art, not vector
       // each tier flares out toward its bottom, so the outline steps in where the next one starts
       const half = Math.round(startHalf + (hw - startHalf) * (r / th) ** 1.5) + ((r + i) % 4 === 0 ? 1 : 0), y = t0 + r;
       for (let dx = -half; dx <= half; dx++) {
-        const c = dx === half || dx === half - 1 && half > 3 ? cols.dark   // shaded right edge
-          : dx < 0 ? cols.lit : cols.body;                                  // lit left, darker right
-        tier.add(snow > 0.2 && r <= 1 ? SNOW : c, cx + dx, y);
+        const x = cx + dx;
+        // shaded like the rest of the scene: lit from the upper left, darker toward each tier's
+        // underside, four tones blended with ordered dithering, a little needle texture
+        let v = 0.66 - (dx / Math.max(1, half)) * 0.32 - (r / th) * 0.32 + (hash(x * 7 + y * 13, i) - 0.5) * 0.14;
+        if (dx === half) v -= 0.25;                      // crisp shaded right edge
+        let c = tones[Math.floor(clamp(v * 4 + (dither(x, y) - 0.5) * 0.9, 0, 3.99))];
+        if (r === 0 || (r === 1 && dx < 0)) c = cols.lit; // sunlit rim on top of the tier
+        if (snow > 0.2 && r <= 1) c = SNOW;
+        tier.add(c, x, y);
       }
-      // the tier's top face catches a bright edge on the lit side
-      if (r > 0 && half > 1 && !(snow > 0.2 && r <= 1)) tier.add(cols.lit, cx - half, y);
     }
     // a scalloped lower edge: little hanging tips every few pixels
     for (let dx = -Math.round(hw); dx <= Math.round(hw); dx += 4) tier.add(dx < 0 ? cols.body : cols.dark, cx + dx, t0 + th + 1);

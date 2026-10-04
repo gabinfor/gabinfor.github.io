@@ -13,6 +13,11 @@ export const STATIONS: Station[] = [
     url: 'https://stream.epic-lounge.com/jazzhop-lounge', home: 'https://epic-lounge.com/', via: 'epic-lounge.com',
   },
   {
+    // 24/7 house music, 192k. (SomaFM refuses playback embedded in other sites, so not that one.)
+    id: 'house', label: 'house', name: 'HouseTime.FM', genre: 'house, 24/7',
+    url: 'https://listen.housetime.fm/tunein-mp3-pls', home: 'https://housetime.fm/', via: 'housetime.fm',
+  },
+  {
     // Atmospheric/liquid drum & bass and jungle, the 2000s Good Looking-style sound. Automated
     // stream (track titles in the metadata), not live DJ shows with hosts.
     id: 'dnb', label: 'dnb', name: 'Atmospheric DnB s0urce', genre: 'atmospheric & liquid dnb, jungle',

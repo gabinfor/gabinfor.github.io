@@ -41,8 +41,8 @@ import { STATIONS } from '../data/radio';
   @media (prefers-reduced-motion: reduce) { .radio.playing .st-name span { padding-left: 0; } }
   .st-meta { color: #4fbf5c; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .radio.playing .state { animation: blink 1.2s steps(1) infinite; }
-  .presets { display: flex; gap: 4px; }
-  .preset { flex: 1; font-size: 11px; padding: 5px 2px; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .preset { font-size: 11px; padding: 5px 2px; }
   .controls { display: flex; gap: 6px; align-items: center; }
   .controls .btn { font-size: 12px; padding: 6px 8px; flex: none; }
   .controls input { flex: 1; min-width: 0; }
