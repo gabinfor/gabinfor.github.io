@@ -1,0 +1,9 @@
+---
+import Base from '../layouts/Base.astro';
+import GpuBlobs from '../components/GpuBlobs.astro';
+---
+<Base title="Lab" description="Interactive experiments: WebGPU, shaders, and other toys.">
+  <h1>Lab</h1>
+  <p class="prose">A shelf for interactive experiments. Each one is a component you can also drop into any post.</p>
+  <GpuBlobs height="70vh" hue={0.15} caption="001 · Raymarched metaballs (WebGPU, WGSL)" />
+</Base>

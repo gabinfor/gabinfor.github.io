@@ -1,0 +1,27 @@
+---
+import Base from '../layouts/Base.astro';
+import FriendsFeed from '../components/FriendsFeed.astro';
+import { BLOGROLL } from '../data/blogroll';
+---
+<Base title="Blogroll" description="Blogs I read, and what they've been writing lately.">
+  <h1>Blogroll</h1>
+  <p class="prose">The web is better when sites link to each other. These are blogs I follow. Their latest posts are pulled in every day. Grab the whole list as <a href="/blogroll.opml">OPML</a> for your feed reader.</p>
+
+  <ul class="roll">
+    {BLOGROLL.map((b) => (
+      <li>
+        <a href={b.url} rel="noopener">{b.name}</a>
+        <span class="meta">{new URL(b.url).hostname}</span>
+        {b.note && <p>{b.note}</p>}
+      </li>
+    ))}
+  </ul>
+
+  <h2 class="section-label meta">Recently, around the web</h2>
+  <FriendsFeed limit={24} perBlog={6} />
+</Base>
+<style>
+  .roll { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 1.5rem; margin: 2rem 0; }
+  .roll a { font-family: var(--display); font-size: 1.7rem; text-decoration: none; display: block; }
+  .roll p { margin: 0.4rem 0 0; color: var(--ink-2); font-size: 1rem; }
+</style>

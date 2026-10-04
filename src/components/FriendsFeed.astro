@@ -1,0 +1,30 @@
+---
+import { getBlogrollPosts } from '../lib/feeds';
+import { fmtDate } from '../lib/format';
+interface Props { limit?: number; perBlog?: number }
+const { limit = 8, perBlog = 2 } = Astro.props;
+// Cap each blog so prolific writers don't crowd everyone else out.
+const seen = new Map<string, number>();
+const items = (await getBlogrollPosts()).filter((i) => {
+  const n = (seen.get(i.blog.url) ?? 0) + 1;
+  seen.set(i.blog.url, n);
+  return n <= perBlog;
+}).slice(0, limit);
+---
+{items.length === 0 ? (
+  <p class="meta">Couldn't reach any feeds during this build.</p>
+) : (
+  <ul class="friends">
+    {items.map((i) => (
+      <li>
+        <a href={i.link} rel="noopener">{i.title}</a>
+        <span class="meta">{i.blog.name}{i.date && !isNaN(+i.date) && ` · ${fmtDate(i.date)}`}</span>
+      </li>
+    ))}
+  </ul>
+)}
+<style>
+  .friends { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  li { background: var(--paper); padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 0.75rem; }
+  a { font-size: 1.05rem; line-height: 1.3; text-decoration: none; }
+</style>

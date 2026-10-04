@@ -1,0 +1,63 @@
+---
+import '../styles/global.css';
+import ThemeToggle from '../components/ThemeToggle.astro';
+import { SITE } from '../data/site';
+
+interface Props { title?: string; description?: string }
+const { title, description = SITE.tagline } = Astro.props;
+const fullTitle = title ? `${title} — ${SITE.title}` : SITE.title;
+const path = Astro.url.pathname;
+const nav = [
+  { href: '/blog/', label: 'Writing' },
+  { href: '/lab/', label: 'Lab' },
+  { href: '/blogroll/', label: 'Blogroll' },
+];
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={new URL(path, Astro.site)} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" type="application/rss+xml" title={SITE.title} href="/rss.xml" />
+    <link rel="blogroll" type="text/xml" href="/blogroll.opml" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet" />
+    <script is:inline>
+      try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="wrap top">
+      <a class="logo" href="/">{SITE.title}<span class="accent">.</span></a>
+      <nav class="mono">
+        {nav.map((n) => (
+          <a href={n.href} aria-current={path.startsWith(n.href) ? 'page' : undefined}>{n.label}</a>
+        ))}
+        <ThemeToggle />
+      </nav>
+    </header>
+    <main class="wrap"><slot /></main>
+    <footer class="wrap foot mono">
+      <span>© {new Date().getFullYear()} {SITE.author}</span>
+      <span>
+        <a href="/rss.xml">RSS</a> · <a href="/blogroll.opml">OPML</a> · <a href={SITE.github}>GitHub</a>
+      </span>
+    </footer>
+  </body>
+</html>
+<style>
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.25rem 0; border-bottom: 1px solid var(--ink); flex-wrap: wrap; }
+  .logo { font-family: var(--display); font-size: 1.9rem; text-decoration: none; line-height: 1; }
+  nav { display: flex; align-items: center; gap: 1.25rem; font-size: 0.8rem; text-transform: uppercase; }
+  nav a { text-decoration: none; }
+  nav a[aria-current] { color: var(--accent); }
+  main { min-height: 70vh; padding-bottom: 4rem; }
+  .foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 1.5rem 0 2.5rem; border-top: 1px solid var(--ink); color: var(--ink-2); }
+</style>

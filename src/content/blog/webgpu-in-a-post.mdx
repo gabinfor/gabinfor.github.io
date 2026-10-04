@@ -1,0 +1,23 @@
+---
+title: Putting a WebGPU scene inside a blog post
+description: MDX lets me drop live 3D components right between paragraphs.
+date: 2026-10-03
+tags: [webgpu, graphics]
+---
+
+import GpuBlobs from '../../components/GpuBlobs.astro';
+
+Posts ending in `.mdx` can import components. Here's a live raymarched scene. Move your pointer over it:
+
+<GpuBlobs height="360px" hue={0.55} caption="Metaballs blended with a smooth-min SDF" />
+
+It's a single fragment shader in WGSL. For each pixel it marches a ray through a *signed distance field*: a function that returns how far any point is from the nearest surface. Smoothly blending a few spheres with `smin` gives the gooey look.
+
+```wgsl
+fn smin(a: f32, b: f32, k: f32) -> f32 {
+  let h = clamp(0.5 + 0.5 * (b - a) / k, 0., 1.);
+  return mix(b, a, h) - k * h * (1. - h);
+}
+```
+
+If your browser doesn't support WebGPU yet, you'll see a soft gradient instead.
