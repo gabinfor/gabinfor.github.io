@@ -131,7 +131,7 @@ function cloudPos(c: Cloud, t = Date.now() / 1000) {
   return { x: Math.floor(c.x), y: Math.round(c.y * H) + dy };
 }
 // Where the cat's head is in its frames (for the bubble and the z's).
-const CAT_HEAD = { x: 24, sleepY: 8 };
+const CAT_HEAD = { x: 24, sleepY: 9 };
 
 function pixelText(text: string, x: number, y: number, px: Pixels, color: string) {
   for (const ch of text) {

@@ -1,7 +1,9 @@
-// The Milky Way in the normal night sky, after long-exposure photos: a bluish-violet haze
-// along a tilted band, a warm core bulge, blue-white star clouds, a dark rift splitting it,
-// pink/orange/teal nebulae, and dense stars coloured by temperature. It fades out toward
-// the mountains. Built once (lazily, the first night it's needed) into a canvas.
+// The Milky Way in the normal night sky, modelled on a long-exposure photo: the band rises
+// steeply from near the horizon (just right of centre) to the upper left; it is warmest and
+// brightest low down (soft salmon/beige), lavender-grey higher up, split by clumpy dark dust
+// lanes with a rift along its right side; the whole sky is dense with faint stars plus a few
+// bright blue-white and orange ones; a warm amber glow sits on the horizon. Muted colours,
+// no saturated nebula blobs. Built once, lazily, the first night it's needed.
 import { Pixels, dither, mix, rgb, smooth } from './palette';
 
 const h2 = (x: number, y: number, s: number) => { const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return v - Math.floor(v); };
@@ -13,10 +15,7 @@ function vn2(x: number, y: number, s: number) {
 }
 const fbm = (x: number, y: number, s: number) => vn2(x, y, s) * 0.55 + vn2(x * 2.1, y * 2.1, s + 1) * 0.3 + vn2(x * 4.3, y * 4.3, s + 2) * 0.15;
 
-const BIG_DIPPER: [number, number][] = [[0, 0], [1, 0.15], [1.9, 0.35], [2.75, 0.45], [3, 1.1], [3.95, 1.25], [4.05, 0.55]];
-const DIPPER_LINES: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 3]];
-const CASSIOPEIA: [number, number][] = [[0, 0], [0.9, 0.8], [1.9, 0.25], [2.9, 0.95], [3.8, 0.1]];
-const STAR_COLS = ['#9bb0ff', '#cad7ff', '#f8f7ff', '#fff4ea', '#ffe1b8', '#ffc08a'];
+const BRIGHT_COLS = ['#a9bcff', '#d6e0ff', '#ffffff', '#fff1dc', '#ffd2a0'];
 
 export class MilkyWay {
   private W = 1; private H = 1;
@@ -26,53 +25,50 @@ export class MilkyWay {
   reset(W: number, H: number) { this.W = W; this.H = H; this.tex = null; this.bright = []; }
 
   private build() {
-    const { W, H } = this, TH = Math.round(H * 0.66);
+    const { W, H } = this, TH = Math.round(H * 0.68);
     const c = document.createElement('canvas');
     c.width = W; c.height = TH;
     const g = c.getContext('2d')!;
-    const haze = new Pixels(), clouds = new Pixels(), glowCore = new Pixels(), neb = new Pixels(), starPx = new Pixels();
-    const hw = H * 0.12, xc = W * 0.3;
+    const L1 = new Pixels(), L2 = new Pixels(), L3 = new Pixels(), L4 = new Pixels(), field = new Pixels(), bright = new Pixels(), horizon = new Pixels();
+    // the band's centre line: from near the horizon, right of centre, up to the top left
+    const x0 = W * 0.62, y0 = H * 0.5, x1 = W * 0.26, y1 = -H * 0.08; // base just above the mountain tops
+    const len = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / len, uy = (y1 - y0) / len;
     for (let y = 0; y < TH; y++) {
-      const fade = smooth(H * 0.62, H * 0.36, y); // gone by the time it reaches the mountains
       for (let x = 0; x < W; x++) {
-        const yc = H * 0.2 + (x - W * 0.5) * 0.3, d = (y - yc) / hw;
-        const base = Math.exp(-d * d * 1.8) * fade;
-        const core = Math.exp(-(((x - xc) / (W * 0.18)) ** 2)) * Math.exp(-d * d * 1.1) * fade;
-        const n = fbm(x / 22, y / 22, 3);
-        const rift = Math.exp(-(((y - (yc + hw * 0.1 * Math.sin(x / 29) + hw * 0.05 * Math.sin(x / 9))) / (hw * 0.17)) ** 2))
-          * smooth(0.3, 0.7, fbm(x / 14, y / 14, 7));
-        const glow = Math.max(0, base * (0.4 + 0.8 * n) + core * (0.25 + 0.4 * n) - rift * 0.85 * (base + core * 0.6));
-        const th = dither(x, y), warm = Math.min(1, core * 1.6);
-        if (glow > 0.05 && th < glow * 0.8) haze.add(rgb(mix(mix([34, 40, 98], [86, 76, 146], n), [120, 92, 80], warm * 0.6)), x, y);
-        if (glow > 0.32 && th < (glow - 0.32) * 1.4) clouds.add(rgb(mix(mix([124, 136, 210], [196, 182, 226], n), [240, 205, 150], warm)), x, y);
-        if (glow > 0.7 && th < (glow - 0.7) * 1.8) glowCore.add(rgb(mix([236, 232, 255], [255, 236, 196], warm)), x, y);
-        const nb = smooth(0.58, 0.76, fbm(x / 30, y / 30, 11)) * (base * 0.6 + core);
-        if (nb > 0.03 && th < nb * 0.6) {
-          const k = fbm(x / 44, y / 44, 13);
-          neb.add(k > 0.58 ? 'rgb(236,84,146)' : k > 0.42 ? 'rgb(246,150,86)' : 'rgb(72,186,214)', x, y);
+        const th = dither(x, y);
+        // position along the band (t: 0 at the horizon, 1 at the top) and across it (d)
+        const px = x - x0, py = y - y0, along = px * ux + py * uy, t = along / len;
+        const wob = Math.sin(t * 7.5) * H * 0.012 + Math.sin(t * 17) * H * 0.006;
+        const hw = H * (0.17 - 0.07 * t), d = (px * uy - py * ux + wob) / hw;
+        const n = fbm(x / 16, y / 16, 3), n2 = fbm(x / 7, y / 7, 5);
+        // brighter and warmer low down, toward the core; clumpy star clouds
+        const bright01 = 0.6 + 0.6 * (1 - Math.min(1, Math.max(0, t)));
+        let glow = Math.exp(-d * d * 1.6) * (0.35 + 0.75 * n * (0.7 + 0.5 * n2)) * bright01;
+        // dust: a rift along the right side of the band, plus dark clumps scattered through it
+        const rift = Math.exp(-(((d - 0.28 - 0.12 * Math.sin(t * 11)) / 0.2) ** 2)) * smooth(0.3, 0.65, fbm(x / 9, y / 9, 7));
+        const clumps = smooth(0.56, 0.74, fbm(x / 8, y / 8, 9)) * Math.exp(-d * d);
+        glow *= 1 - 0.75 * rift - 0.55 * clumps;
+        if (t < -0.02 || t > 1.05) glow = 0;
+        const warm = smooth(0.62, 0, t) * (0.6 + 0.4 * n);
+        if (glow > 0.05 && th < glow * 1.05) L1.add(rgb(mix([30, 29, 58], [50, 44, 74], n)), x, y);
+        if (glow > 0.24 && th < (glow - 0.24) * 1.7) L2.add(rgb(mix(mix([86, 82, 120], [118, 106, 136], n2), [146, 108, 108], warm)), x, y);
+        if (glow > 0.44 && th < (glow - 0.44) * 1.9) L3.add(rgb(mix([160, 152, 186], [208, 168, 158], warm)), x, y);
+        if (glow > 0.66 && th < (glow - 0.66) * 2.2) L4.add(rgb(mix([214, 210, 232], [236, 206, 196], warm)), x, y);
+        // the star field: dense faint stars everywhere, many more inside the band
+        const r = h2(x, y, 21);
+        if (r < 0.02 + glow * 0.08) {
+          const b = h2(x, y, 22);
+          if (b > 0.995) { // a few bright stars, with short spikes
+            const col = BRIGHT_COLS[Math.floor(h2(x, y, 23) * BRIGHT_COLS.length)];
+            bright.add(col, x - 1, y, 3, 1); bright.add(col, x, y - 1, 1, 3); this.bright.push([x, y, col]);
+          } else field.add(b > 0.8 ? '#e6eaff' : b > 0.45 ? '#a7b0d4' : '#6a74a0', x, y);
         }
-        if (h2(x, y, 21) < base * 0.05 + core * 0.04) {
-          const b = h2(x, y, 22), col = STAR_COLS[Math.floor(h2(x, y, 23) * STAR_COLS.length)];
-          if (b > 0.985) { starPx.add(col, x - 2, y, 5, 1); starPx.add(col, x, y - 2, 1, 5); starPx.add('#ffffff', x, y); this.bright.push([x, y, col]); }
-          else if (b > 0.94) { starPx.add(col, x - 1, y, 3, 1); starPx.add(col, x, y - 1, 1, 3); }
-          else starPx.add(b > 0.6 ? col : 'rgba(220,226,255,0.75)', x, y);
-        }
+        // light pollution: a warm amber glow behind the mountains, a little left of the band
+        const amber = Math.exp(-(((x - W * 0.47) / (W * 0.14)) ** 2)) * smooth(H * 0.3, H * 0.5, y); // peeks over the ridge
+        if (amber > 0.04 && th < amber * 0.75) horizon.add(rgb(mix([34, 30, 52], [120, 76, 44], amber)), x, y); // close to the sky colour, so it reads as a soft glow
       }
     }
-    haze.flush(g); clouds.flush(g); neb.flush(g); glowCore.flush(g); starPx.flush(g);
-    // two constellations, with faint dotted lines
-    const s = Math.max(5, Math.round(H * 0.04)), lines = new Pixels(), stars = new Pixels();
-    const draw = (pts: [number, number][], links: [number, number][], ox: number, oy: number) => {
-      const P = pts.map(([a, b]) => [Math.round(ox + a * s), Math.round(oy + b * s)] as const);
-      for (const [i, j] of links) {
-        const [x0, y0] = P[i], [x1, y1] = P[j], steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-        for (let k = 2; k < steps - 1; k += 2) lines.add('rgba(170,190,255,0.3)', Math.round(x0 + ((x1 - x0) * k) / steps), Math.round(y0 + ((y1 - y0) * k) / steps));
-      }
-      for (const [x, y] of P) { stars.add('#ffffff', x - 1, y, 3, 1); stars.add('#ffffff', x, y - 1, 1, 3); }
-    };
-    draw(BIG_DIPPER, DIPPER_LINES, Math.min(W * 0.7, W - 5 * s), H * 0.05);
-    draw(CASSIOPEIA, CASSIOPEIA.slice(1).map((_, i) => [i, i + 1]), Math.max(4, W * 0.05), H * 0.06);
-    lines.flush(g); stars.flush(g);
+    horizon.flush(g); L1.flush(g); L2.flush(g); L3.flush(g); L4.flush(g); field.flush(g); bright.flush(g);
     this.tex = c;
   }
 
