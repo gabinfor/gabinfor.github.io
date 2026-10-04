@@ -21,9 +21,10 @@ const C = {
   back: hex('#8a9cc8'), front: hex('#56688f'), snow: hex('#f2f5ff'), snowShade: hex('#b9c4e4'),
   forest: hex('#2f5a3f'), forestLit: hex('#43775a'),
   far: hex('#7aaa6c'), mid: hex('#5a9a4e'), near: hex('#3f8040'),
-  pine: hex('#2d5e3a'), pineLit: hex('#3f7a4a'), pineDark: hex('#1f4630'), trunk: hex('#5b3a22'),
-  leaf: hex('#3f8a3f'), leafLit: hex('#6cbf5a'), leafDark: hex('#2a6630'),
-  fgPine: hex('#1d4230'), fgPineLit: hex('#2b5a3e'), fgPineDark: hex('#122c1e'), fgGrass: hex('#24502c'),
+  pine: hex('#2d5e3a'), pineLit: hex('#457f4c'), pineDark: hex('#1f4630'), pineDeep: hex('#163524'), trunk: hex('#5b3a22'),
+  leaf: hex('#3f8a3f'), leafLit: hex('#6cbf5a'), leafDark: hex('#2a6630'), leafDeep: hex('#1d4d25'),
+  fgPine: hex('#1f4a33'), fgPineLit: hex('#2f6644'), fgPineDark: hex('#143524'), fgPineDeep: hex('#0c2418'), fgGrass: hex('#24502c'),
+  bark: hex('#3a2616'), barkLit: hex('#57391f'),
   dirt: hex('#b8996a'), dirtEdge: hex('#8f7550'),
   rock: hex('#8a8a90'), rockLit: hex('#b4b4bc'), rockDark: hex('#5e5e66'),
   water: hex('#22406a'), metal: hex('#3a3a44'), warm: hex('#ffd45a'),
@@ -415,7 +416,7 @@ export class Land {
     const { W, H } = this;
     if (W < 160) return; // phones: keep the view open
     const sh = this.shader(st, L_FRONT);
-    const cols = { body: rgb(sh(C.fgPine)), lit: rgb(sh(C.fgPineLit)), dark: rgb(sh(C.fgPineDark)), trunk: rgb(sh(hex('#3a2616'))) };
+    const cols = { body: rgb(sh(C.fgPine)), lit: rgb(sh(C.fgPineLit)), dark: rgb(sh(C.fgPineDark)), deep: rgb(sh(C.fgPineDeep)), trunk: rgb(sh(C.bark)), trunkLit: rgb(sh(C.barkLit)) };
     pine(g, -3, H + 1, Math.round(H * 0.52), cols, st.snow, 3);
     pine(g, 9, H + 1, Math.round(H * 0.34), cols, st.snow, 5);
     pine(g, W - 4, H + 1, Math.round(H * 0.46), cols, st.snow, 4);
@@ -430,8 +431,8 @@ export class Land {
 
   // ---------- props ----------
   private drawTrees(g: Ctx, st: LandStyle, layer: number, sh: (c: RGB) => RGB, ys: Int16Array) {
-    const pineCols = { body: rgb(sh(C.pine)), lit: rgb(sh(C.pineLit)), dark: rgb(sh(C.pineDark)), trunk: rgb(sh(C.trunk)) };
-    const leafCols = { body: rgb(sh(C.leaf)), lit: rgb(sh(C.leafLit)), dark: rgb(sh(C.leafDark)), trunk: rgb(sh(C.trunk)) };
+    const pineCols = { body: rgb(sh(C.pine)), lit: rgb(sh(C.pineLit)), dark: rgb(sh(C.pineDark)), deep: rgb(sh(C.pineDeep)), trunk: rgb(sh(C.trunk)), trunkLit: rgb(sh(C.barkLit)) };
+    const leafCols = { body: rgb(sh(C.leaf)), lit: rgb(sh(C.leafLit)), dark: rgb(sh(C.leafDark)), deep: rgb(sh(C.leafDeep)), trunk: rgb(sh(C.trunk)), trunkLit: rgb(sh(C.barkLit)) };
     for (const t of this.trees) {
       if (t.layer !== layer) continue;
       const base = ys[clamp(t.x, 0, this.W - 1)] + 1;
@@ -451,25 +452,43 @@ export class Land {
   }
 }
 
-type TreeCols = { body: string; lit: string; dark: string; trunk: string };
+type TreeCols = { body: string; lit: string; dark: string; deep: string; trunk: string; trunkLit: string };
 
-/** Procedural pine: sawtooth tiers, lit on the left, snow on exposed branch tips. */
+/**
+ * Procedural pine. Layers of drooping branches, each widening downward with ragged needle
+ * tips; lit on top and from the left, shadowed underneath, blended with ordered dithering
+ * rather than hard bands. Snow settles on the top of each layer. Scales from 4px to 150px.
+ */
 function pine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow: number, seed: number) {
-  const trunkH = Math.max(1, Math.round(h * 0.12)), crownH = h - trunkH;
-  const tiers = Math.max(2, Math.round(crownH / 4)), maxHalf = Math.max(1, Math.round(h * 0.28));
   const px = new Pixels();
-  px.add(cols.trunk, cx, baseY - trunkH, h > 24 ? 2 : 1, trunkH);
+  const big = h > 24, trunkH = Math.max(1, Math.round(h * (big ? 0.12 : 0.1))), crownH = h - trunkH;
+  const tiers = clamp(Math.round(crownH / (big ? 7 : 4)), 2, 14), maxHalf = Math.max(1, Math.round(h * 0.3));
+  const tierH = crownH / tiers, trunkW = h > 60 ? 3 : h > 24 ? 2 : 1, top = baseY - h;
+  // trunk with a lit left edge and bark specks
+  for (let y = baseY - trunkH; y < baseY; y++) for (let k = 0; k < trunkW; k++) {
+    const x = cx - (trunkW >> 1) + k;
+    px.add(k === 0 && trunkW > 1 ? cols.trunkLit : hash(x * 5 + y * 3, seed) < 0.18 ? cols.trunkLit : cols.trunk, x, y);
+  }
+  const tones = [cols.deep, cols.dark, cols.body, cols.lit];
   let prevHalf = -1;
   for (let y = 0; y < crownH; y++) {
-    const t = y / crownH, tierPos = ((y * tiers) / crownH) % 1;
-    const wobble = h > 20 ? Math.round((hash(y, seed) - 0.5) * 2) : 0;
-    const half = Math.max(0, Math.round(maxHalf * (0.15 + 0.85 * t) * (0.5 + 0.5 * tierPos)) + wobble);
-    const py = baseY - trunkH - crownH + y;
+    const tier = Math.min(tiers - 1, Math.floor(y / tierH)), tp = (y - tier * tierH) / tierH; // 0 top of a layer .. 1 its bottom
+    const layerHalf = maxHalf * (0.2 + 0.8 * ((tier + 1) / tiers));
+    const half = Math.max(0, Math.round(layerHalf * (0.3 + 0.7 * tp ** 0.8)));
+    const py = top + y;
     for (let dx = -half; dx <= half; dx++) {
-      const exposed = Math.abs(dx) > prevHalf;
-      px.add(snow > 0 && exposed && dither(cx + dx, py) < snow * 0.9 ? SNOW
-        : dx < -half * 0.3 ? cols.lit : dx > half * 0.35 ? cols.dark : cols.body, cx + dx, py);
+      const x = cx + dx, ax = half ? Math.abs(dx) / half : 0;
+      // ragged needle tips along the outer edge
+      if (big && ax > 0.7 && hash(x * 13 + py * 7, seed) < (ax - 0.7) * 2.2) continue;
+      // light from the upper left; each layer's underside is in shadow
+      let v = 0.62 - (dx / Math.max(1, half)) * 0.3 - tp * 0.45;
+      if (big) v += (hash(x * 3 + py * 11, seed) - 0.5) * 0.18; // needle texture
+      let c = tones[Math.floor(clamp(v * 4 + (dither(x, py) - 0.5), 0, 3.99))];
+      if (snow > 0 && (Math.abs(dx) > prevHalf || tp < 1 / tierH) && dither(x, py) < snow * 0.9) c = SNOW;
+      px.add(c, x, py);
     }
+    // drooping tips hang a pixel below the widest row of each layer
+    if (big && tp > 1 - 1 / tierH && half > 2) { px.add(cols.dark, cx - half, py + 1); px.add(cols.deep, cx + half, py + 1); }
     prevHalf = half;
   }
   px.flush(g);
@@ -477,24 +496,33 @@ function pine(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow
 
 const SNOW = 'rgb(236,240,252)';
 
-/** Procedural deciduous tree (or bush): a few overlapping blobs, lit from the upper left. */
+/** Procedural deciduous tree (or bush): overlapping leaf clusters, each lit from the upper left on its own. */
 function roundTree(g: Ctx, cx: number, baseY: number, h: number, cols: TreeCols, snow: number, seed: number, bush: boolean) {
   const trunkH = bush ? 0 : Math.round(h * 0.35), R = Math.max(2, Math.round(bush ? h * 0.6 : h * 0.33));
   const px = new Pixels();
-  if (trunkH) px.add(cols.trunk, cx, baseY - trunkH, h > 14 ? 2 : 1, trunkH);
+  if (trunkH) {
+    const tw = h > 14 ? 2 : 1;
+    for (let y = baseY - trunkH; y < baseY; y++) for (let k = 0; k < tw; k++) px.add(k === 0 && tw > 1 ? cols.trunkLit : cols.trunk, cx + k, y);
+  }
   const cy = baseY - trunkH - R + 1;
+  // back clusters first, front (lower) ones last, so each overlaps the one behind it
   const blobs: [number, number, number][] = bush
     ? [[0, 0, R], [-R * 0.7, R * 0.3, R * 0.7], [R * 0.7, R * 0.3, R * 0.7]]
-    : [[0, 0, R], [-R * 0.65, R * 0.3, R * 0.72], [R * 0.65, R * 0.25, R * 0.75], [0, -R * 0.45, R * 0.72]];
-  const inside = (x: number, y: number) => blobs.some(([bx, by, br]) => (x - bx) ** 2 + (y - by) ** 2 <= br * br + 0.5);
-  const ext = Math.ceil(R * 1.5);
-  for (let y = -ext; y <= ext; y++) for (let x = -ext; x <= ext; x++) {
-    if (!inside(x, y)) continue;
-    const pxX = cx + x, pxY = cy + y, d = x + y;
-    let c = d < -R * 0.6 ? cols.lit : d > R * 0.5 ? cols.dark : cols.body;
-    if (c === cols.body && hash(pxX * 13 + pxY * 7, seed) < 0.12) c = cols.lit; // leafy speckle
-    if (snow > 0 && !inside(x, y - 1) && dither(pxX, pxY) < snow * 0.9) c = SNOW;
-    px.add(c, pxX, pxY);
+    : [[0, -R * 0.45, R * 0.72], [-R * 0.65, R * 0.15, R * 0.72], [R * 0.65, R * 0.1, R * 0.75], [0, R * 0.05, R * 0.85], [-R * 0.3, R * 0.55, R * 0.6], [R * 0.4, R * 0.55, R * 0.6]];
+  const tones = [cols.deep, cols.dark, cols.body, cols.lit];
+  const owner = new Map<number, number>(), key = (x: number, y: number) => (y + 64) * 256 + x + 128;
+  const ext = Math.ceil(R * 1.6);
+  blobs.forEach(([bx, by, br], i) => {
+    for (let y = -ext; y <= ext; y++) for (let x = -ext; x <= ext; x++) if ((x - bx) ** 2 + (y - by) ** 2 <= br * br + 0.5) owner.set(key(x, y), i);
+  });
+  for (const [k, i] of owner) {
+    const y = Math.floor(k / 256) - 64, x = (k % 256) - 128, [bx, by, br] = blobs[i];
+    const lx = (x - bx) / br, ly = (y - by) / br, pX = cx + x, pY = cy + y;
+    let v = 0.62 - (lx + ly) * 0.38 + (hash(pX * 13 + pY * 7, seed) - 0.5) * 0.2;
+    if (lx * lx + ly * ly > 0.75 && ly > 0.1) v -= 0.25; // a cluster's lower rim is in its own shadow
+    let c = tones[Math.floor(clamp(v * 4 + (dither(pX, pY) - 0.5), 0, 3.99))];
+    if (snow > 0 && !owner.has(key(x, y - 1)) && dither(pX, pY) < snow * 0.9) c = SNOW;
+    px.add(c, pX, pY);
   }
   px.flush(g);
 }

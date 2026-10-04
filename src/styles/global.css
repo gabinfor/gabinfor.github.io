@@ -88,7 +88,7 @@ h3 { font-size: 17px; margin: 1.4em 0 0.4em; }
 
 /* See-through windows (toggle in the status box): let the pixel art show behind the content. */
 html:not([data-glass='off']) .window { background: color-mix(in srgb, var(--win-bg) 82%, transparent); }
-html:not([data-glass='off']) .window .window, html:not([data-glass='off']) .toast { background: var(--win-bg); }
+html:not([data-glass='off']) .window .window { background: var(--win-bg); }
 
 /* ---------- clicky buttons ---------- */
 .btn, .tb-btn {
