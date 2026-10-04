@@ -13,9 +13,10 @@ export const STATIONS: Station[] = [
     url: 'https://stream.epic-lounge.com/jazzhop-lounge', home: 'https://epic-lounge.com/', via: 'epic-lounge.com',
   },
   {
-    // 24/7 house music, 192k. (SomaFM refuses playback embedded in other sites, so not that one.)
-    id: 'house', label: 'house', name: 'HouseTime.FM', genre: 'house, 24/7',
-    url: 'https://listen.housetime.fm/tunein-mp3-pls', home: 'https://housetime.fm/', via: 'housetime.fm',
+    // Funky house and nu-disco (192k): the groovy, vocal, Future Nostalgia-ish end of house.
+    // Tested alternative: https://streaming.hotmixradio.com/hotmix-nu_disco-en-mp3 (Hotmix Nu Disco).
+    id: 'house', label: 'house', name: 'Technolovers: Funky House', genre: 'funky house, nu-disco',
+    url: 'https://stream.technolovers.fm/funky-house', home: 'https://www.technolovers.fm/', via: 'technolovers.fm',
   },
   {
     // Atmospheric/liquid drum & bass and jungle, the 2000s Good Looking-style sound. Automated
