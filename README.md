@@ -1,6 +1,6 @@
 # gabinfor.github.io
 
-My personal site, built with [Astro](https://astro.build) and deployed to GitHub Pages.
+My personal site, [gabinfor.github.io](https://gabinfor.github.io), built with [Astro](https://astro.build) and deployed to GitHub Pages.
 
 ## Write a post
 
