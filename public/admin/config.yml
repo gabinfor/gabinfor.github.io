@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://unpkg.com/@sveltia/cms@0.258.1/schema/sveltia-cms.json
+# Post editor served at /admin/. Sign in with a GitHub access token; saving commits to main,
+# which rebuilds the site. Fields mirror the blog schema in src/content.config.ts.
+
+backend:
+  name: github
+  repo: gabinfor/gabinfor.github.io
+  branch: main
+
+site_url: https://gabinfor.github.io
+
+# Uploaded images go next to the posts so Astro optimizes them like any other post image.
+media_folder: /src/content/blog/images
+
+media_libraries:
+  default:
+    config:
+      transformations:
+        raster_image:
+          format: webp
+          quality: 85
+          width: 2048
+          height: 2048
+
+collections:
+  - name: blog
+    label: Posts
+    label_singular: Post
+    folder: /src/content/blog
+    extension: md
+    format: frontmatter
+    create: true
+    slug: '{{slug}}'
+    media_folder: images
+    public_folder: images
+    sortable_fields: [date, title]
+    summary: '{{title}} ({{date}})'
+    fields:
+      - { name: title, label: Title, widget: string }
+      - { name: description, label: Description, widget: string, hint: One-line summary shown under the title and in the post list. }
+      - { name: date, label: Date, widget: datetime, type: date }
+      - { name: tags, label: Tags, widget: list, required: false, default: [] }
+      - { name: draft, label: Draft, widget: boolean, default: false, hint: Drafts are saved to the repo but not published. }
+      - { name: body, label: Body, widget: markdown }

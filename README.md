@@ -1,6 +1,6 @@
 # gabinfor.github.io
 
-My personal site, built with [Astro](https://astro.build) and deployed to GitHub Pages.
+My personal site, [gabinfor.github.io](https://gabinfor.github.io), built with [Astro](https://astro.build) and deployed to GitHub Pages.
 
 ## Write a post
 
@@ -19,6 +19,14 @@ Text goes here.
 
 Push to `main` and it's live in about a minute.
 
+Images can sit next to the post and be linked with a relative path, e.g. `![alt](images/photo.jpg)`; Astro resizes them and converts them to WebP.
+
+### Or write in the browser
+
+Open [gabinfor.github.io/admin/](https://gabinfor.github.io/admin/) (Sveltia CMS). Choose **Sign In Using Access Token**, follow its link to create a GitHub token with read and write access to this repo's contents, and paste it in. The token stays in that browser's local storage. (**Sign In with GitHub** needs an OAuth server, which this site doesn't have.)
+
+Saving a post commits it to `main`, so it's live about a minute later; tick **Draft** to save without publishing. Uploaded images are converted to WebP (at most 2048 px) and stored in `src/content/blog/images/`. The editor lists `.md` posts only, since `.mdx` posts with components are edited in code. Its settings are in `public/admin/config.yml`. Locally, `npm run dev` serves it at `/admin/index.html`.
+
 ## Run locally
 
 ```sh
@@ -29,6 +37,7 @@ npm run dev
 ## Where things live
 
 - `src/content/blog/`: posts
+- `public/admin/`: the in-browser post editor (Sveltia CMS)
 - `src/data/blogroll.ts`: blogs I follow (feeds are fetched at build time)
 - `src/data/site.ts`: name, tagline, links
 - `src/sky/`: the pixel sky engine: time of day, weather, sprites, fireworks, secrets. Preview with `?hour=21` and/or `?weather=storm` (clear, cloudy, rain, storm, snow, fog).
